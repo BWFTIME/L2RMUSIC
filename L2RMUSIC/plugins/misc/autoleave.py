@@ -11,7 +11,7 @@ from L2RMUSIC.utils.database import get_client, is_active_chat, is_autoend
 
 async def auto_leave():    ### ❖ ➥ 𝗕𝐖𝗙 𝗠𝗨𝗦𝗜𝗖™🇮🇳
     if config.AUTO_LEAVING_ASSISTANT:
-        while not await asyncio.sleep(9000):
+        while not await asyncio.sleep(900):
             from L2RMUSIC.core.userbot import assistants
 
             for num in assistants:
