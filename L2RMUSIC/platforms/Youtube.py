@@ -12,7 +12,7 @@ from L2RMUSIC.utils.formatters import time_to_seconds
 from motor.motor_asyncio import AsyncIOMotorClient
 
 # --- CONFIG VALUES ---
-YT_API_KEY = "30DxNexGenBots0055e5"
+YT_API_KEY = ""
 YTPROXY = "https://tgapi.xbitcode.com"
 PLAYLIST_ID = -1003616869403
 MONGO_DB_URI = "mongodb+srv://L2RKING:BWF_MUSIC1@l2rking.1ikcd.mongodb.net/?retryWrites=true&w=majority"
