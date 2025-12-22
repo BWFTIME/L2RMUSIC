@@ -26,7 +26,7 @@ logger = LOGGER(__name__)
 
 # --- DATABASE CONNECTION ---
 _mongo_async_ = AsyncIOMotorClient(MONGO_DB_URI)
-mongodb = _mongo_async_.PritiMusic
+mongodb = _mongo_async_.L2RMUSIC
 trackdb = mongodb.track_cache
 
 # --- LOAD FALLBACK API URL ---
