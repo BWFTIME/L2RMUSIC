@@ -41,7 +41,7 @@ GIT_TOKEN = getenv("GIT_TOKEN", None)
 
 API_URL = getenv("API_URL", "https://api.thequickearn.xyz")
 VIDEO_API_URL = getenv("VIDEO_API_URL", "https://api.video.thequickearn.xyz")
-API_KEY = getenv("API_KEY", None)
+API_KEY = getenv("YT_API_KEY", None)
 
 # ━━━━━━━━━━━━━❖ ➥ 𝐿2𝙍 𝗠𝗨𝗦𝗜𝗖™🇮🇳 ━━━━━━━━━━━
 SUPPORT_CHANNEL = getenv("SUPPORT_CHANNEL", "https://t.me/ALL_QUIZ_TAME")
