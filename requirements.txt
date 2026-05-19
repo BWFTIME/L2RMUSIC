@@ -13,8 +13,6 @@ motor
 numpy
 pillow
 psutil
-py-tgcalls==2.2.12
-ntgcalls==2.2.1
 pykeyboard
 pyrogram
 python-dotenv
@@ -31,3 +29,4 @@ git+https://github.com/AsmSafone/SafoneAPI.git
 wget
 pornhub-api
 telegraph
+py-tgcalls==1.0.5
