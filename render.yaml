@@ -1,5 +1,5 @@
 services:
-  - type: web
+  - type: worker
     name: L2RMUSIC
     env: python
     plan: free
