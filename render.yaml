@@ -10,15 +10,15 @@ services:
         sync: false
       - key: API_ID
         sync: false
-      - key: ASSISTANT_SESSION
+      - key: STRING_SESSION
         sync: false
       - key: BOT_TOKEN
         sync: false
       - key: OWNER_ID
         sync: false
-      - key: MongoDB_url
+      - key: MONGO_DB_URI
         sync: false
-      - key: UPDATES_CHANNEL
+      - key: LOGGER_ID
         sync: false
-      - key: SUPPORT_GROUP
+      - key: API_KEY
         sync: false
