@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: L2RMUSIC
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python main.py"
+    envVars:
+      - key: API_HASH
+        sync: false
+      - key: API_ID
+        sync: false
+      - key: ASSISTANT_SESSION
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+      - key: OWNER_ID
+        sync: false
+      - key: MongoDB_url
+        sync: false
+      - key: UPDATES_CHANNEL
+        sync: false
+      - key: SUPPORT_GROUP
+        sync: false
