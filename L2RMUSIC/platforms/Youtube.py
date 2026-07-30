@@ -17,7 +17,7 @@ YTPROXY = "https://tgapi.xbitcode.com"
 
 # [FIXED]: यहाँ पुरानी इनवैलिड आईडी की जगह अब यह Envrionment Variable से या सही आईडी से काम करेगा
 # आप चाहें तो नीचे -100xxxxxxx की जगह अपना नया चैनल आईडी डाल सकते हैं।
-PLAYLIST_ID = int(os.getenv("PLAYLIST_ID", "-1003616869403"))
+PLAYLIST_ID = int(os.getenv("PLAYLIST_ID", "-1004292380568"))
 
 MONGO_DB_URI = "mongodb+srv://L2RKING:BWF_MUSIC1@l2rking.1ikcd.mongodb.net/?retryWrites=true&w=majority"
 LIMIT_SECONDS = 900
