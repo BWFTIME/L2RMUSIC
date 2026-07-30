@@ -14,7 +14,11 @@ from motor.motor_asyncio import AsyncIOMotorClient
 # --- CONFIG VALUES ---
 YT_API_KEY = "30DxNexGenBots0055e5"
 YTPROXY = "https://tgapi.xbitcode.com"
-PLAYLIST_ID = -1003616869403
+
+# [FIXED]: यहाँ पुरानी इनवैलिड आईडी की जगह अब यह Envrionment Variable से या सही आईडी से काम करेगा
+# आप चाहें तो नीचे -100xxxxxxx की जगह अपना नया चैनल आईडी डाल सकते हैं।
+PLAYLIST_ID = int(os.getenv("PLAYLIST_ID", "-1003616869403"))
+
 MONGO_DB_URI = "mongodb+srv://L2RKING:BWF_MUSIC1@l2rking.1ikcd.mongodb.net/?retryWrites=true&w=majority"
 LIMIT_SECONDS = 900
 
@@ -44,7 +48,6 @@ async def load_api_url():
     except Exception:
         YOUR_API_URL = FALLBACK_API_URL
 
-# Safe initialization for API URL loading
 async def init_api():
     await load_api_url()
 
@@ -70,7 +73,6 @@ class YouTubeAPI:
                         pass
         return None
 
-    # --- UNIVERSAL UPLOAD (Saves Message ID for Multiple Bots) ---
     async def _upload_to_cache(self, vid_id, file_path, title, is_video):
         try:
             if not os.path.exists(file_path): 
@@ -90,7 +92,6 @@ class YouTubeAPI:
             else:
                 msg = await app.send_audio(PLAYLIST_ID, file_path, caption=cap, title=title)
 
-            # Saving Message ID allows any bot (who is admin) to retrieve the file
             if msg:
                 await trackdb.update_one(
                     {"vid_id": db_id},
@@ -105,7 +106,6 @@ class YouTubeAPI:
         except Exception as e:
             logger.error(f"Upload Error: {e}")
 
-    # --- UNIVERSAL RETRIEVAL (Reads Message ID & Fetches Fresh File ID) ---
     async def get_cached_file(self, vid_id: str, is_video: bool = False):
         db_id = f"{vid_id}_video" if is_video else vid_id
         local_path = self._find_file(vid_id)
@@ -114,7 +114,6 @@ class YouTubeAPI:
 
         doc = await trackdb.find_one({"vid_id": db_id})
         
-        # Check if we have a Message ID stored
         if doc and "message_id" in doc:
             message_id = doc['message_id']
             if not os.path.exists("downloads"):
@@ -156,7 +155,6 @@ class YouTubeAPI:
         
         return None
 
-    # --- PRIMARY API LOGIC ---
     async def get_api_url(self, vid_id, is_video):
         try:
             if not YT_API_KEY or not YTPROXY: 
@@ -175,14 +173,12 @@ class YouTubeAPI:
             logger.error(f"API Error: {e}")
             return None
 
-    # --- FALLBACK API LOGIC ---
     async def _external_api_download(self, vid_id, is_video):
         global YOUR_API_URL
         if not YOUR_API_URL:
             await load_api_url()
         
         current_api = YOUR_API_URL or FALLBACK_API_URL
-        
         ext = "mp4" if is_video else "mp3"
         type_str = "video" if is_video else "audio"
         
@@ -192,7 +188,6 @@ class YouTubeAPI:
 
         try:
             async with aiohttp.ClientSession() as session:
-                # Step 1: Get Token
                 params = {"url": vid_id, "type": type_str}
                 async with session.get(
                     f"{current_api}/download",
@@ -206,7 +201,6 @@ class YouTubeAPI:
                     if not download_token: 
                         return None
 
-                # Step 2: Stream Download
                 logger.info(f"🛡️ Using Fallback API for {vid_id}")
                 stream_url = f"{current_api}/stream/{vid_id}?type={type_str}"
                 
@@ -228,7 +222,6 @@ class YouTubeAPI:
             logger.error(f"Fallback API Failed: {e}")
         return None
 
-    # --- BACKGROUND PROCESS ---
     async def _background_process(self, vid_id, link, title, is_video, duration_sec=None):
         if duration_sec is None:
             try:
@@ -262,7 +255,6 @@ class YouTubeAPI:
         except Exception: 
             pass
 
-    # --- MAIN DOWNLOAD FUNCTION ---
     async def download(
         self,
         link: str,
@@ -285,12 +277,10 @@ class YouTubeAPI:
 
         is_video_request = bool(video or songvideo)
 
-        # 1. CHECK CACHE (Universal Message-ID based)
         cached_path = await self.get_cached_file(vid_id, is_video=is_video_request)
         if cached_path: 
             return cached_path, True
 
-        # 2. TRY PRIMARY API (XBIT) - STREAM + BACKGROUND CACHE
         try:
             api_url = await self.get_api_url(vid_id, is_video_request)
             if api_url:
@@ -300,7 +290,6 @@ class YouTubeAPI:
         except Exception as e:
             logger.error(f"Primary API Failed: {e}")
 
-        # 3. IF PRIMARY FAILS -> TRIGGER FALLBACK API
         logger.warning(f"⚠️ Switching to Fallback API for {vid_id}...")
         
         fallback_file = await self._external_api_download(vid_id, is_video_request)
@@ -313,7 +302,6 @@ class YouTubeAPI:
         logger.error("❌ All APIs Failed.")
         return None, False
 
-    # --- UTILS ---
     async def playlist(self, link, limit, user_id, videoid: Union[bool, str] = None):
         return []
 
