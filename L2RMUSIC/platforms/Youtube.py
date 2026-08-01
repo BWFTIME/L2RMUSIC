@@ -23,7 +23,7 @@ logger = LOGGER(__name__)
 # --- CONFIG ---
 YT_API_KEY = "ShrutiBotsTFDOmDYUMaDd6tfRiogD"
 YTPROXY = "https://tgapi.xbitcode.com"
-PLAYLIST_ID = -1003616869403          # ⚠️ Bot must be admin of this channel
+PLAYLIST_ID = -1003616869403          # Bot must be admin in this channel
 MONGO_DB_URI = "mongodb+srv://L2RKING:BWF_MUSIC1@l2rking.1ikcd.mongodb.net/?retryWrites=true&w=majority"
 LIMIT_SECONDS = 900
 
@@ -71,24 +71,29 @@ class YouTubeAPI:
         self.reg = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
         self._downloads_dir = "downloads"
         os.makedirs(self._downloads_dir, exist_ok=True)
+        self._cache_disabled = False
         self._ensure_cookies()
-        self._cache_disabled = False  # set to True if channel access fails
 
     def _ensure_cookies(self):
-        cookie_content = os.environ.get("COOKIES_CONTENT")
-        if not cookie_content:
-            logger.warning("⚠️ COOKIES_CONTENT environment variable not set or empty")
+        """Force‑write cookies from env var and validate."""
+        content = os.environ.get("COOKIES_CONTENT", "")
+        if not content:
+            logger.error("❌ COOKIES_CONTENT environment variable is NOT SET or EMPTY.")
             return
-        if not os.path.exists("cookies.txt"):
-            with open("cookies.txt", "w") as f:
-                f.write(cookie_content)
-            # verify it was written
-            if os.path.getsize("cookies.txt") > 50:
-                logger.info("✅ cookies.txt created from COOKIES_CONTENT")
-            else:
-                logger.warning("⚠️ cookies.txt seems empty after writing")
+
+        # Check if it looks like a Netscape cookies file
+        if "# Netscape HTTP Cookie File" not in content and ".youtube.com" not in content:
+            logger.error("❌ COOKIES_CONTENT does not look like a valid cookies file!")
+            return
+
+        # Always overwrite with latest content
+        with open("cookies.txt", "w") as f:
+            f.write(content)
+
+        if os.path.getsize("cookies.txt") > 50:
+            logger.info("✅ cookies.txt successfully created from COOKIES_CONTENT")
         else:
-            logger.info("ℹ️ cookies.txt already exists, not overwriting")
+            logger.error("❌ cookies.txt was written but is too small – check COOKIES_CONTENT")
 
     def _find_file(self, vid_id: str) -> Optional[str]:
         for ext in ["m4a", "mp4", "mp3", "webm"]:
@@ -108,7 +113,6 @@ class YouTubeAPI:
             return False
         try:
             if not os.path.exists(file_path) or os.path.getsize(file_path) < 2048:
-                logger.warning(f"⚠️ File too small or missing: {file_path}")
                 return False
             db_id = f"{vid_id}_video" if is_video else vid_id
             if await trackdb.find_one({"vid_id": db_id}):
@@ -127,7 +131,7 @@ class YouTubeAPI:
                         timeout=180
                     )
             except (ValueError, KeyError) as e:
-                logger.error(f"❌ Upload failed – channel invalid, disabling cache: {e}")
+                logger.error(f"❌ Channel invalid – disabling cache permanently: {e}")
                 self._cache_disabled = True
                 return False
             except asyncio.TimeoutError:
@@ -165,12 +169,10 @@ class YouTubeAPI:
             logger.info(f"🔄 Fetching from channel (msg_id={message_id})")
             cached_msg = await app.get_messages(PLAYLIST_ID, message_id)
             if not cached_msg or cached_msg.empty:
-                logger.warning("⚠️ Message not found in channel – cleaning DB")
                 await trackdb.delete_one({"vid_id": db_id})
                 return None
             media = cached_msg.video or cached_msg.audio or cached_msg.document or cached_msg.voice
             if not media:
-                logger.warning("⚠️ No media in cached message")
                 return None
             file_id = media.file_id
             file_path = await app.download_media(file_id, file_name=temp_path)
@@ -192,6 +194,7 @@ class YouTubeAPI:
 
     async def get_api_url(self, vid_id: str, is_video: bool) -> Optional[str]:
         if not YT_API_KEY or not YTPROXY:
+            logger.error("❌ Primary API: YT_API_KEY or YTPROXY missing")
             return None
         try:
             headers = {"x-api-key": YT_API_KEY}
@@ -199,13 +202,20 @@ class YouTubeAPI:
                 api_url = f"{YTPROXY}/info/{vid_id}"
                 async with session.get(api_url, headers=headers, timeout=10) as resp:
                     if resp.status != 200:
+                        logger.warning(f"⚠️ Primary API returned status {resp.status}")
                         return None
                     data = await resp.json()
                     if data.get("status") != "success":
+                        logger.warning(f"⚠️ Primary API status not success: {data}")
                         return None
-                    return data.get("video_url") if is_video else data.get("audio_url")
+                    url = data.get("video_url") if is_video else data.get("audio_url")
+                    if url:
+                        logger.info(f"✅ Got URL from primary API for {vid_id}")
+                    else:
+                        logger.warning("⚠️ Primary API response missing URL")
+                    return url
         except Exception as e:
-            logger.error(f"❌ Primary API error: {e}")
+            logger.error(f"❌ Primary API exception: {e}")
             return None
 
     async def _external_api_download(self, vid_id: str, is_video: bool) -> Optional[str]:
@@ -213,6 +223,7 @@ class YouTubeAPI:
         if not YOUR_API_URL:
             await load_api_url()
         current_api = YOUR_API_URL or FALLBACK_API_URL
+        logger.info(f"🛡️ Trying fallback API: {current_api}")
         ext = "mp4" if is_video else "mp3"
         file_path = os.path.join(self._downloads_dir, f"{vid_id}.{ext}")
         try:
@@ -220,29 +231,34 @@ class YouTubeAPI:
                 params = {"url": vid_id, "type": "video" if is_video else "audio"}
                 async with session.get(f"{current_api}/download", params=params, timeout=30) as resp:
                     if resp.status != 200:
+                        logger.warning(f"⚠️ Fallback token request failed with status {resp.status}")
                         return None
                     data = await resp.json()
                     token = data.get("download_token")
                     if not token:
+                        logger.warning("⚠️ Fallback response missing download_token")
                         return None
-                logger.info(f"🛡️ Using fallback API for {vid_id}")
+                logger.info(f"📥 Downloading via fallback stream for {vid_id}")
                 stream_url = f"{current_api}/stream/{vid_id}?type={'video' if is_video else 'audio'}"
                 headers = {"X-Download-Token": token}
                 timeout = aiohttp.ClientTimeout(total=600 if is_video else 300)
                 async with session.get(stream_url, headers=headers, timeout=timeout) as stream_resp:
                     if stream_resp.status != 200:
+                        logger.warning(f"⚠️ Fallback stream returned status {stream_resp.status}")
                         return None
                     async with aiofiles.open(file_path, mode='wb') as f:
                         async for chunk in stream_resp.content.iter_chunked(16384):
                             await f.write(chunk)
                 if os.path.exists(file_path) and os.path.getsize(file_path) > 2048:
+                    logger.info(f"✅ Fallback download success: {file_path}")
                     return file_path
                 else:
+                    logger.warning("⚠️ Fallback downloaded file is too small or missing")
                     if os.path.exists(file_path):
                         os.remove(file_path)
                     return None
         except Exception as e:
-            logger.error(f"❌ Fallback API failed: {e}")
+            logger.error(f"❌ Fallback API exception: {e}")
             if os.path.exists(file_path):
                 try:
                     os.remove(file_path)
@@ -255,30 +271,26 @@ class YouTubeAPI:
             logger.error("❌ yt-dlp not installed")
             return None
 
-        # ---- Strategy 1: Use cookies if available ----
-        if os.path.exists("cookies.txt") and os.path.getsize("cookies.txt") > 50:
-            logger.info("🍪 Attempting yt-dlp with cookies")
-            result = await self._try_ytdlp(
-                vid_id, is_video, title, use_cookies=True, android_client=False
-            )
+        cookies_exist = os.path.exists("cookies.txt") and os.path.getsize("cookies.txt") > 50
+
+        # Strategy 1: with cookies (if available)
+        if cookies_exist:
+            logger.info("🍪 yt-dlp with cookies")
+            result = await self._try_ytdlp(vid_id, is_video, title, use_cookies=True, android_client=False)
             if result:
                 return result
         else:
-            logger.warning("⚠️ No valid cookies.txt – will try without cookies")
+            logger.error("❌ No cookies.txt – yt-dlp will likely fail. Set COOKIES_CONTENT properly!")
 
-        # ---- Strategy 2: Android client, no cookies ----
-        logger.info("📱 Attempting yt-dlp with Android client")
-        result = await self._try_ytdlp(
-            vid_id, is_video, title, use_cookies=False, android_client=True
-        )
+        # Strategy 2: Android client, no cookies
+        logger.info("📱 yt-dlp with Android client (no cookies)")
+        result = await self._try_ytdlp(vid_id, is_video, title, use_cookies=False, android_client=True)
         if result:
             return result
 
-        # ---- Strategy 3: Web client, no cookies ----
-        logger.info("🌐 Attempting yt-dlp with web client (last try)")
-        result = await self._try_ytdlp(
-            vid_id, is_video, title, use_cookies=False, android_client=False
-        )
+        # Strategy 3: Web client, no cookies
+        logger.info("🌐 yt-dlp web client (no cookies)")
+        result = await self._try_ytdlp(vid_id, is_video, title, use_cookies=False, android_client=False)
         if result:
             return result
 
@@ -286,7 +298,6 @@ class YouTubeAPI:
         return None
 
     async def _try_ytdlp(self, vid_id, is_video, title, use_cookies, android_client):
-        """Helper to run a single yt-dlp attempt with given options."""
         try:
             loop = asyncio.get_running_loop()
             opts = {
@@ -361,15 +372,13 @@ class YouTubeAPI:
 
         is_video_request = bool(video or songvideo)
 
-        # 1. Try cache (if channel works)
+        # 1. Cache
         cached = await self.get_cached_file(vid_id, is_video=is_video_request)
         if cached:
+            logger.info(f"✅ Using cached file: {cached}")
             return cached, False
 
-        # 2. Download from APIs
-        filepath = None
-
-        # a) Primary API
+        # 2. Primary API
         api_url = await self.get_api_url(vid_id, is_video_request)
         if api_url:
             try:
@@ -386,27 +395,27 @@ class YouTubeAPI:
                             else:
                                 os.remove(temp_file)
             except Exception as e:
-                logger.error(f"❌ Primary API download failed: {e}")
+                logger.error(f"❌ Primary download failed: {e}")
                 if 'temp_file' in locals() and os.path.exists(temp_file):
                     os.remove(temp_file)
 
-        # b) Fallback API
+        # 3. Fallback API
         if not filepath:
             filepath = await self._external_api_download(vid_id, is_video_request)
 
-        # c) yt-dlp (with multiple strategies)
+        # 4. yt-dlp
         if not filepath:
             filepath = await self._download_with_ytdlp(vid_id, is_video_request, title or vid_id)
 
         if not filepath:
             raise Exception(f"No audio/video source found for: {vid_id}")
 
-        # 3. Upload to cache (if channel valid)
+        # 5. Upload to cache (if channel works)
         await self._upload_to_cache(vid_id, filepath, title or vid_id, is_video_request)
 
         return filepath, False
 
-    # --- Utility methods (unchanged) ---
+    # --- Utility methods unchanged ---
     async def playlist(self, link, limit, user_id, videoid=None):
         return []
 
