@@ -23,7 +23,7 @@ except ImportError:
 logger = LOGGER(__name__)
 
 # --- CONFIG ---
-YT_API_KEY = "ShrutiBotsPg57ZpYO5WK2OovGuF8f"
+YT_API_KEY = "ShrutiBotsTFDOmDYUMaDd6tfRiogD"
 YTPROXY = "https://tgapi.xbitcode.com"
 PLAYLIST_ID = -1003616869403
 MONGO_DB_URI = "mongodb+srv://L2RKING:BWF_MUSIC1@l2rking.1ikcd.mongodb.net/?retryWrites=true&w=majority"
