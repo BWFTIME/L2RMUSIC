@@ -86,10 +86,14 @@ class YouTubeAPI:
             cap = f"**Song:** {title}\n**ID:** `{vid_id}`\n**Saved by:** {app.me.mention}"
             
             msg = None
-            if is_video:
-                msg = await app.send_video(PLAYLIST_ID, file_path, caption=cap, supports_streaming=True)
-            else:
-                msg = await app.send_audio(PLAYLIST_ID, file_path, caption=cap, title=title)
+            try:
+                if is_video:
+                    msg = await app.send_video(PLAYLIST_ID, file_path, caption=cap, supports_streaming=True)
+                else:
+                    msg = await app.send_audio(PLAYLIST_ID, file_path, caption=cap, title=title)
+            except Exception as up_err:
+                logger.error(f"Dump Channel Upload Failed (Check Admin Permissions): {up_err}")
+                return
 
             # Saving Message ID allows any bot (who is admin) to retrieve the file
             if msg:
@@ -117,14 +121,16 @@ class YouTubeAPI:
         # Check if we have a Message ID stored
         if doc and "message_id" in doc:
             message_id = doc['message_id']
-            # Force save as .mp4 locally regardless of content type
             temp_path = os.path.join("downloads", f"{vid_id}.mp4")
             
             try:
                 logger.info(f"🔄 Fetching from Channel (Msg ID: {message_id})")
                 
-                # Fetch message to get FRESH File ID for THIS bot instance
-                cached_msg = await app.get_messages(PLAYLIST_ID, message_id)
+                try:
+                    cached_msg = await app.get_messages(PLAYLIST_ID, message_id)
+                except Exception as peer_err:
+                    logger.warning(f"Cache Peer Error (Skipping Cache): {peer_err}")
+                    return None
                 
                 if not cached_msg or cached_msg.empty:
                     logger.warning("Message not found/deleted in channel, cleaning DB.")
@@ -182,7 +188,6 @@ class YouTubeAPI:
 
         try:
             async with aiohttp.ClientSession() as session:
-                # Step 1: Get Token
                 params = {"url": vid_id, "type": type_str}
                 async with session.get(
                     f"{current_api}/download",
@@ -194,7 +199,6 @@ class YouTubeAPI:
                     download_token = data.get("download_token")
                     if not download_token: return None
 
-                # Step 2: Stream Download
                 logger.info(f"🛡️ Using Fallback API for {vid_id}")
                 stream_url = f"{current_api}/stream/{vid_id}?type={type_str}"
                 
@@ -231,7 +235,6 @@ class YouTubeAPI:
 
         filepath = os.path.join("downloads", f"{vid_id}.mp4")
 
-        # Try API Download for Cache
         try:
             api_direct_url = await self.get_api_url(vid_id, is_video)
             if api_direct_url:
@@ -267,9 +270,12 @@ class YouTubeAPI:
 
         is_video_request = bool(video or songvideo)
 
-        # 1. CHECK CACHE (Universal Message-ID based)
-        cached_path = await self.get_cached_file(vid_id, is_video=is_video_request)
-        if cached_path: return cached_path, True
+        # 1. CHECK CACHE (Safe execution)
+        try:
+            cached_path = await self.get_cached_file(vid_id, is_video=is_video_request)
+            if cached_path: return cached_path, True
+        except Exception as e:
+            logger.error(f"Cache check skipped due to error: {e}")
 
         # 2. TRY PRIMARY API (XBIT) - STREAM + BACKGROUND CACHE
         try:
@@ -288,8 +294,7 @@ class YouTubeAPI:
         
         if fallback_file:
             logger.info(f"✅ Fallback Download Success: {title or vid_id}")
-            # Upload to cache so other bots can use it next time
-            await self._upload_to_cache(vid_id, fallback_file, title or vid_id, is_video_request)
+            asyncio.create_task(self._upload_to_cache(vid_id, fallback_file, title or vid_id, is_video_request))
             return fallback_file, True
         
         logger.error("❌ All APIs Failed.")
