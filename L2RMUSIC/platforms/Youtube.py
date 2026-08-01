@@ -19,18 +19,18 @@ try:
 except ImportError:
     yt_dlp = None
 
-# --- Logger ---
-logger = LOGGER.getChild(__name__)
+# --- Logger (CORRECTED) ---
+logger = LOGGER(__name__)   # <-- use function call, not getChild
 
 # --- CONFIG ---
-YT_API_KEY = "ShrutiBotsPg57ZpYO5WK2OovGuF8f"          # may expire – handled gracefully
+YT_API_KEY = "ShrutiBotsPg57ZpYO5WK2OovGuF8f"
 YTPROXY = "https://tgapi.xbitcode.com"
-PLAYLIST_ID = -1003616869403                           # your cache channel
+PLAYLIST_ID = -1003616869403
 MONGO_DB_URI = "mongodb+srv://L2RKING:BWF_MUSIC1@l2rking.1ikcd.mongodb.net/?retryWrites=true&w=majority"
 LIMIT_SECONDS = 900
 
 FALLBACK_API_URL = "https://shrutibots.site"
-YOUR_API_URL = None                                    # loaded from pastebin
+YOUR_API_URL = None
 
 # --- MongoDB ---
 _mongo_async_ = AsyncIOMotorClient(MONGO_DB_URI)
