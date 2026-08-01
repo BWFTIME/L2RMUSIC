@@ -23,7 +23,7 @@ logger = LOGGER(__name__)
 # --- CONFIG ---
 YT_API_KEY = "ShrutiBotsTFDOmDYUMaDd6tfRiogD"
 YTPROXY = "https://tgapi.xbitcode.com"
-PLAYLIST_ID = -1003616869403          # set to None if you don't want caching
+PLAYLIST_ID = -1003616869403          # ⚠️ Bot must be admin of this channel
 MONGO_DB_URI = "mongodb+srv://L2RKING:BWF_MUSIC1@l2rking.1ikcd.mongodb.net/?retryWrites=true&w=majority"
 LIMIT_SECONDS = 900
 
@@ -72,16 +72,23 @@ class YouTubeAPI:
         self._downloads_dir = "downloads"
         os.makedirs(self._downloads_dir, exist_ok=True)
         self._ensure_cookies()
+        self._cache_disabled = False  # set to True if channel access fails
 
     def _ensure_cookies(self):
+        cookie_content = os.environ.get("COOKIES_CONTENT")
+        if not cookie_content:
+            logger.warning("⚠️ COOKIES_CONTENT environment variable not set or empty")
+            return
         if not os.path.exists("cookies.txt"):
-            cookie_content = os.environ.get("COOKIES_CONTENT")
-            if cookie_content:
-                with open("cookies.txt", "w") as f:
-                    f.write(cookie_content)
-                logger.info("✅ cookies.txt written from environment variable.")
+            with open("cookies.txt", "w") as f:
+                f.write(cookie_content)
+            # verify it was written
+            if os.path.getsize("cookies.txt") > 50:
+                logger.info("✅ cookies.txt created from COOKIES_CONTENT")
             else:
-                logger.warning("⚠️ No cookies.txt found. YouTube may block requests.")
+                logger.warning("⚠️ cookies.txt seems empty after writing")
+        else:
+            logger.info("ℹ️ cookies.txt already exists, not overwriting")
 
     def _find_file(self, vid_id: str) -> Optional[str]:
         for ext in ["m4a", "mp4", "mp3", "webm"]:
@@ -97,7 +104,7 @@ class YouTubeAPI:
         return None
 
     async def _upload_to_cache(self, vid_id: str, file_path: str, title: str, is_video: bool) -> bool:
-        if PLAYLIST_ID is None:
+        if PLAYLIST_ID is None or self._cache_disabled:
             return False
         try:
             if not os.path.exists(file_path) or os.path.getsize(file_path) < 2048:
@@ -119,6 +126,10 @@ class YouTubeAPI:
                         app.send_audio(PLAYLIST_ID, file_path, caption=caption, title=title),
                         timeout=180
                     )
+            except (ValueError, KeyError) as e:
+                logger.error(f"❌ Upload failed – channel invalid, disabling cache: {e}")
+                self._cache_disabled = True
+                return False
             except asyncio.TimeoutError:
                 logger.error("⏰ Upload timed out")
                 return False
@@ -139,7 +150,7 @@ class YouTubeAPI:
             return False
 
     async def get_cached_file(self, vid_id: str, is_video: bool = False) -> Optional[str]:
-        if PLAYLIST_ID is None:
+        if PLAYLIST_ID is None or self._cache_disabled:
             return None
         db_id = f"{vid_id}_video" if is_video else vid_id
         local_path = self._find_file(vid_id)
@@ -168,7 +179,8 @@ class YouTubeAPI:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
         except (ValueError, KeyError) as e:
-            logger.warning(f"⚠️ Cached channel invalid, removing DB entry: {e}")
+            logger.warning(f"⚠️ Cached channel invalid, disabling cache: {e}")
+            self._cache_disabled = True
             await trackdb.delete_one({"vid_id": db_id})
             if os.path.exists(temp_path):
                 os.remove(temp_path)
@@ -242,66 +254,89 @@ class YouTubeAPI:
         if yt_dlp is None:
             logger.error("❌ yt-dlp not installed")
             return None
-        cookiefile = "cookies.txt" if os.path.exists("cookies.txt") else None
-        if not cookiefile:
-            logger.warning("⚠️ No cookies.txt – yt-dlp may fail")
-        common_opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'extract_flat': False,
-            'socket_timeout': 30,
-            'retries': 3,
-            'fragment_retries': 3,
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'referer': 'https://www.youtube.com/',
-            'add_metadata': True,
-        }
-        if cookiefile:
-            common_opts['cookiefile'] = cookiefile
 
-        if is_video:
-            ydl_opts = {
-                **common_opts,
-                'format': 'best[ext=mp4]',
-                'outtmpl': os.path.join(self._downloads_dir, f"{vid_id}.mp4"),
-            }
+        # ---- Strategy 1: Use cookies if available ----
+        if os.path.exists("cookies.txt") and os.path.getsize("cookies.txt") > 50:
+            logger.info("🍪 Attempting yt-dlp with cookies")
+            result = await self._try_ytdlp(
+                vid_id, is_video, title, use_cookies=True, android_client=False
+            )
+            if result:
+                return result
         else:
-            ydl_opts = {
-                **common_opts,
-                'format': 'bestaudio/best',
-                'outtmpl': os.path.join(self._downloads_dir, f"{vid_id}.%(ext)s"),
-                'postprocessors': [{
+            logger.warning("⚠️ No valid cookies.txt – will try without cookies")
+
+        # ---- Strategy 2: Android client, no cookies ----
+        logger.info("📱 Attempting yt-dlp with Android client")
+        result = await self._try_ytdlp(
+            vid_id, is_video, title, use_cookies=False, android_client=True
+        )
+        if result:
+            return result
+
+        # ---- Strategy 3: Web client, no cookies ----
+        logger.info("🌐 Attempting yt-dlp with web client (last try)")
+        result = await self._try_ytdlp(
+            vid_id, is_video, title, use_cookies=False, android_client=False
+        )
+        if result:
+            return result
+
+        logger.error(f"❌ All yt-dlp strategies failed for {vid_id}")
+        return None
+
+    async def _try_ytdlp(self, vid_id, is_video, title, use_cookies, android_client):
+        """Helper to run a single yt-dlp attempt with given options."""
+        try:
+            loop = asyncio.get_running_loop()
+            opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'extract_flat': False,
+                'socket_timeout': 30,
+                'retries': 3,
+                'fragment_retries': 3,
+                'user_agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36' if android_client else 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'referer': 'https://www.youtube.com/',
+                'add_metadata': True,
+            }
+            if use_cookies:
+                opts['cookiefile'] = 'cookies.txt'
+            if android_client:
+                opts['extractor_args'] = {'youtube': {'player_client': ['android']}}
+
+            if is_video:
+                opts['format'] = 'best[ext=mp4]'
+                opts['outtmpl'] = os.path.join(self._downloads_dir, f"{vid_id}.mp4")
+            else:
+                opts['format'] = 'bestaudio/best'
+                opts['outtmpl'] = os.path.join(self._downloads_dir, f"{vid_id}.%(ext)s")
+                opts['postprocessors'] = [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
                     'preferredquality': '192',
-                }],
-            }
+                }]
 
-        logger.info(f"⬇️ yt-dlp download: {title}")
-        for attempt in range(3):
-            try:
-                loop = asyncio.get_running_loop()
-                def download_sync():
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        ydl.download([f"https://www.youtube.com/watch?v={vid_id}"])
-                    for f in os.listdir(self._downloads_dir):
-                        if f.startswith(vid_id):
-                            full = os.path.join(self._downloads_dir, f)
-                            if os.path.getsize(full) > 2048:
-                                if not is_video and not f.endswith(".mp3"):
-                                    new_path = os.path.join(self._downloads_dir, f"{vid_id}.mp3")
-                                    os.rename(full, new_path)
-                                    return new_path
-                                return full
-                    return None
-                result = await loop.run_in_executor(None, download_sync)
-                if result:
-                    logger.info(f"✅ yt-dlp success: {result}")
-                    return result
-            except Exception as e:
-                logger.error(f"❌ yt-dlp attempt {attempt+1} failed: {e}")
-                await asyncio.sleep(2)
-        logger.error(f"❌ yt-dlp failed after 3 attempts for {vid_id}")
+            def download_sync():
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    ydl.download([f"https://www.youtube.com/watch?v={vid_id}"])
+                for f in os.listdir(self._downloads_dir):
+                    if f.startswith(vid_id):
+                        full = os.path.join(self._downloads_dir, f)
+                        if os.path.getsize(full) > 2048:
+                            if not is_video and not f.endswith(".mp3"):
+                                new_path = os.path.join(self._downloads_dir, f"{vid_id}.mp3")
+                                os.rename(full, new_path)
+                                return new_path
+                            return full
+                return None
+
+            result = await loop.run_in_executor(None, download_sync)
+            if result:
+                logger.info(f"✅ yt-dlp success: {result}")
+                return result
+        except Exception as e:
+            logger.warning(f"⚠️ yt-dlp strategy failed: {e}")
         return None
 
     async def download(
@@ -326,12 +361,12 @@ class YouTubeAPI:
 
         is_video_request = bool(video or songvideo)
 
-        # 1. Try cache
+        # 1. Try cache (if channel works)
         cached = await self.get_cached_file(vid_id, is_video=is_video_request)
         if cached:
             return cached, False
 
-        # 2. Download via primary / fallback / yt-dlp
+        # 2. Download from APIs
         filepath = None
 
         # a) Primary API
@@ -359,19 +394,19 @@ class YouTubeAPI:
         if not filepath:
             filepath = await self._external_api_download(vid_id, is_video_request)
 
-        # c) yt-dlp
+        # c) yt-dlp (with multiple strategies)
         if not filepath:
             filepath = await self._download_with_ytdlp(vid_id, is_video_request, title or vid_id)
 
         if not filepath:
             raise Exception(f"No audio/video source found for: {vid_id}")
 
-        # 3. Upload to cache
+        # 3. Upload to cache (if channel valid)
         await self._upload_to_cache(vid_id, filepath, title or vid_id, is_video_request)
 
         return filepath, False
 
-    # --- Utility methods ---
+    # --- Utility methods (unchanged) ---
     async def playlist(self, link, limit, user_id, videoid=None):
         return []
 
