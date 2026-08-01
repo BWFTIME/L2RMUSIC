@@ -11,7 +11,7 @@ from L2RMUSIC import LOGGER, app
 from L2RMUSIC.utils.formatters import time_to_seconds
 from motor.motor_asyncio import AsyncIOMotorClient
 
-# --- yt-dlp fallback (optional) ---
+# --- yt-dlp fallback ---
 try:
     import yt_dlp
 except ImportError:
@@ -228,7 +228,7 @@ class YouTubeAPI:
                     pass
             return None
 
-    # ---- yt-dlp fallback ----
+    # ---- yt-dlp fallback (FIXED: Added cookies support) ----
     async def _download_with_ytdlp(self, vid_id, is_video, title):
         if yt_dlp is None:
             logger.error("yt-dlp not installed.")
@@ -236,10 +236,12 @@ class YouTubeAPI:
 
         os.makedirs("downloads", exist_ok=True)
 
+        # 🔥 IMPORTANT: COOKIES FILE ADDED HERE
         if is_video:
             ydl_opts = {
                 'format': 'best[ext=mp4]',
                 'outtmpl': os.path.join("downloads", f"{vid_id}.mp4"),
+                'cookiefile': 'cookies.txt',    # <--- ये line जोड़ी है
                 'quiet': True,
                 'no_warnings': True,
                 'extract_flat': False,
@@ -248,6 +250,7 @@ class YouTubeAPI:
             ydl_opts = {
                 'format': 'bestaudio/best',
                 'outtmpl': os.path.join("downloads", f"{vid_id}.%(ext)s"),
+                'cookiefile': 'cookies.txt',    # <--- ये line जोड़ी है
                 'quiet': True,
                 'no_warnings': True,
                 'extract_flat': False,
@@ -258,7 +261,7 @@ class YouTubeAPI:
                 }],
             }
 
-        logger.info(f"⬇️ Downloading via yt-dlp: {title or vid_id}")
+        logger.info(f"⬇️ Downloading via yt-dlp (with cookies): {title or vid_id}")
 
         try:
             loop = asyncio.get_running_loop()
@@ -269,7 +272,6 @@ class YouTubeAPI:
                 # Find the downloaded file
                 for f in os.listdir("downloads"):
                     if f.startswith(vid_id) and os.path.getsize(os.path.join("downloads", f)) > 2048:
-                        # For audio, ensure it's .mp3
                         if not is_video and not f.endswith(".mp3"):
                             final_path = os.path.join("downloads", f"{vid_id}.mp3")
                             os.rename(os.path.join("downloads", f), final_path)
@@ -284,7 +286,6 @@ class YouTubeAPI:
                 logger.info(f"✅ yt-dlp download successful: {result_path}")
                 return result_path
             else:
-                # cleanup
                 for f in os.listdir("downloads"):
                     if f.startswith(vid_id):
                         try:
@@ -383,7 +384,7 @@ class YouTubeAPI:
             asyncio.create_task(self._upload_to_cache(vid_id, fallback_file, title or vid_id, is_video_request))
             return fallback_file, True
 
-        # 4. yt-dlp (final resort)
+        # 4. yt-dlp (final resort) - अब ये cookies के साथ काम करेगा
         logger.warning(f"🔄 Primary & Fallback failed – trying yt-dlp for {vid_id}...")
         ytdlp_file = await self._download_with_ytdlp(vid_id, is_video_request, title or vid_id)
         if ytdlp_file:
