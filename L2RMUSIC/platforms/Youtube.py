@@ -6,6 +6,7 @@ from typing import Union, Optional, Tuple
 import aiohttp
 import aiofiles
 from pyrogram.enums import MessageEntityType
+from pyrogram.errors import PeerIdInvalid
 from pyrogram.types import Message
 from youtubesearchpython.__future__ import VideosSearch, CustomSearch
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -19,13 +20,13 @@ try:
 except ImportError:
     yt_dlp = None
 
-# --- Logger (CORRECTED) ---
-logger = LOGGER(__name__)   # <-- use function call, not getChild
+# --- Logger ---
+logger = LOGGER(__name__)
 
 # --- CONFIG ---
-YT_API_KEY = "ShrutiBotsPg57ZpYO5WK2OovGuF8f"
+YT_API_KEY = "ShrutiBotsPg57ZpYO5WK2OovGuF8f"          # may expire – handled gracefully
 YTPROXY = "https://tgapi.xbitcode.com"
-PLAYLIST_ID = -1003616869403
+PLAYLIST_ID = -1003616869403                           # your cache channel
 MONGO_DB_URI = "mongodb+srv://L2RKING:BWF_MUSIC1@l2rking.1ikcd.mongodb.net/?retryWrites=true&w=majority"
 LIMIT_SECONDS = 900
 
@@ -36,6 +37,23 @@ YOUR_API_URL = None
 _mongo_async_ = AsyncIOMotorClient(MONGO_DB_URI)
 mongodb = _mongo_async_.L2RMUSIC
 trackdb = mongodb.track_cache
+
+# --- Check channel accessibility (cached) ---
+_CACHE_AVAILABLE = None
+
+async def _check_cache_channel():
+    global _CACHE_AVAILABLE
+    if _CACHE_AVAILABLE is not None:
+        return _CACHE_AVAILABLE
+    try:
+        chat = await app.get_chat(PLAYLIST_ID)
+        _CACHE_AVAILABLE = True
+        logger.info(f"✅ Cache channel accessible: {chat.title} (ID: {PLAYLIST_ID})")
+        return True
+    except Exception as e:
+        logger.warning(f"⚠️ Cache channel inaccessible: {e} – cache will be skipped")
+        _CACHE_AVAILABLE = False
+        return False
 
 
 # --- Load fallback API URL ---
@@ -59,8 +77,10 @@ try:
     loop = asyncio.get_event_loop()
     if loop.is_running():
         asyncio.create_task(load_api_url())
+        asyncio.create_task(_check_cache_channel())   # also check channel
     else:
         loop.run_until_complete(load_api_url())
+        loop.run_until_complete(_check_cache_channel())
 except RuntimeError:
     pass
 
@@ -91,6 +111,10 @@ class YouTubeAPI:
     # ---- Upload to cache channel (with retries) ----
     async def _upload_to_cache(self, vid_id: str, file_path: str, title: str, is_video: bool) -> bool:
         try:
+            # Skip if channel not accessible
+            if not await _check_cache_channel():
+                return False
+
             if not os.path.exists(file_path) or os.path.getsize(file_path) < 2048:
                 logger.warning(f"File too small or missing: {file_path}")
                 return False
@@ -102,7 +126,6 @@ class YouTubeAPI:
             logger.info(f"📤 Uploading to channel: {title}")
             caption = f"**Song:** {title}\n**ID:** `{vid_id}`\n**Saved by:** {app.me.mention}"
 
-            # Try sending with a timeout
             try:
                 if is_video:
                     msg = await asyncio.wait_for(
@@ -135,8 +158,12 @@ class YouTubeAPI:
             logger.error(f"Upload error: {e}")
             return False
 
-    # ---- Retrieve from cache ----
+    # ---- Retrieve from cache (with peer error handling) ----
     async def get_cached_file(self, vid_id: str, is_video: bool = False) -> Optional[str]:
+        # Skip if channel not accessible
+        if not await _check_cache_channel():
+            return None
+
         db_id = f"{vid_id}_video" if is_video else vid_id
 
         # 1. Check local download folder
@@ -184,6 +211,11 @@ class YouTubeAPI:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
 
+        except PeerIdInvalid:
+            logger.error("Peer ID invalid – bot is not a member of the cache channel. Skipping cache.")
+            # Delete all cache entries for this channel? We'll just skip for now.
+            # You may want to delete all trackdb entries if the channel is permanently inaccessible.
+            return None
         except Exception as e:
             logger.error(f"Cache retrieval failed: {e}")
             if os.path.exists(temp_path):
@@ -261,14 +293,17 @@ class YouTubeAPI:
                     pass
             return None
 
-    # ---- yt-dlp fallback (with optional cookies) ----
+    # ---- yt-dlp fallback (with cookie advice) ----
     async def _download_with_ytdlp(self, vid_id: str, is_video: bool, title: str) -> Optional[str]:
         if yt_dlp is None:
             logger.error("yt-dlp not installed")
             return None
 
-        # Check if cookies file exists; if not, we omit it
+        # Check for cookies file – if missing, log warning and proceed anyway
         cookiefile = "cookies.txt" if os.path.exists("cookies.txt") else None
+        if not cookiefile:
+            logger.warning("No cookies.txt found – yt-dlp may fail on YouTube's bot detection. "
+                           "Please export cookies from your browser and save as 'cookies.txt' in the working directory.")
 
         if is_video:
             ydl_opts = {
@@ -452,9 +487,8 @@ class YouTubeAPI:
         logger.error(f"❌ All download methods failed for {vid_id}")
         raise Exception(f"No audio/video source found for: {vid_id}")
 
-    # ---- Utility methods (unchanged, but with fixes) ----
+    # ---- Utility methods (unchanged) ----
     async def playlist(self, link, limit, user_id, videoid: Union[bool, str] = None):
-        # Not implemented – returns empty list
         return []
 
     async def _get_video_details(self, link: str, limit: int = 1) -> Optional[dict]:
@@ -463,7 +497,6 @@ class YouTubeAPI:
             search_results = (await results.next()).get("result", [])
             for result in search_results:
                 return result
-            # Fallback with CustomSearch
             search = CustomSearch(query=link, searchPreferences="EgIYAw==", limit=1)
             for res in (await search.next()).get("result", []):
                 return res
