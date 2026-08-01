@@ -24,6 +24,7 @@ requests
 tgcrypto
 unidecode
 git+https://github.com/yt-dlp/yt-dlp
+py_yt
 youtube-search
 youtube-search-python
 git+https://github.com/AsmSafone/SafoneAPI
