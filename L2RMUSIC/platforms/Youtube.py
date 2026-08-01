@@ -5,12 +5,12 @@ from typing import Union
 import yt_dlp
 from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
-from py_yt import VideosSearch, Playlist  # यहाँ Playlist को भी शामिल किया गया है[span_5](start_span)[span_5](end_span)
+from py_yt import VideosSearch
 import aiohttp
 
-API_URL = os.environ.get("SHRUTI_API_URL", "https://api.shrutibots.site")
+API_URL = os.environ.get("SHRUTI_API_URL", "https://api01.shrutibots.site")
 
-API_KEY = os.environ.get("SHRUTI_API_KEY", "ShrutiBotsPg57ZpYO5WK2OovGuF8f") ## Get This API KEY FROM TELEGRAM BOT USERNAME: @SHRUTIAPIBOT 
+API_KEY = os.environ.get("SHRUTI_API_KEY", "ShrutiBots3OYSuzKa7u0PyQi3ifqT") ## Get This API KEY FROM TELEGRAM BOT USERNAME: @SHRUTIAPIBOT 
 
 DOWNLOAD_DIR = "downloads"
 
