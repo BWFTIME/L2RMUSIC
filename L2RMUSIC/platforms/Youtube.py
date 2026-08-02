@@ -24,7 +24,7 @@ logger = LOGGER(__name__)
 # --- CONFIGURATION (Environment overrides) ---
 YTPROXY = getenv("YTPROXY_URL", "https://tgapi.xbitcode.com")
 YT_API_KEY = getenv("YT_API_KEY", "xbit_GjLUhA7Xsu_5Dr_xBdFZLr8LzorcKIkK")
-PLAYLIST_ID = -1001859664687          # Your channel: https://t.me/YouTubedatabase
+PLAYLIST_ID = -1003616869403          # ✅ New channel: https://t.me/YourDatabaseChannel
 MONGO_DB_URI = getenv("MONGO_DB_URI", "mongodb+srv://L2RKING:BWF_MUSIC1@l2rking.1ikcd.mongodb.net/?retryWrites=true&w=majority")
 LIMIT_SECONDS = 900
 
@@ -35,7 +35,7 @@ _mongo_async_ = AsyncIOMotorClient(MONGO_DB_URI)
 mongodb = _mongo_async_.L2RMUSIC
 trackdb = mongodb.track_cache
 
-# Create index on 'title' for fast search
+# Create indexes for fast search
 async def create_indexes():
     await trackdb.create_index("title", unique=False)
     await trackdb.create_index("vid_id", unique=True)
@@ -134,7 +134,6 @@ class YouTubeAPI:
         duration: str = None,
         thumb: str = None
     ) -> bool:
-        """Upload file to cache channel and store metadata in DB."""
         if PLAYLIST_ID is None or self._cache_disabled:
             return False
         try:
@@ -142,7 +141,6 @@ class YouTubeAPI:
                 return False
             db_id = f"{vid_id}_video" if is_video else vid_id
 
-            # Check if already in DB
             if await trackdb.find_one({"vid_id": db_id}):
                 return True
 
@@ -175,7 +173,6 @@ class YouTubeAPI:
                 return False
 
             if msg and msg.id:
-                # Store metadata in DB
                 doc = {
                     "vid_id": db_id,
                     "message_id": msg.id,
@@ -199,7 +196,6 @@ class YouTubeAPI:
             return False
 
     async def get_cached_file(self, vid_id: str, is_video: bool = False) -> Optional[str]:
-        """Get file from local or channel cache by video ID."""
         if PLAYLIST_ID is None or self._cache_disabled:
             return None
         db_id = f"{vid_id}_video" if is_video else vid_id
@@ -241,18 +237,16 @@ class YouTubeAPI:
         return None
 
     async def _search_cache_by_title(self, query: str) -> Optional[dict]:
-        """Search the cache DB by title (case-insensitive). Return metadata if found."""
         if self._cache_disabled or PLAYLIST_ID is None:
             return None
-        # Use regex for case-insensitive partial match
         regex = re.compile(query, re.IGNORECASE)
         doc = await trackdb.find_one({"title": {"$regex": regex}})
         if doc:
             vid_id = doc["vid_id"].replace("_video", "").replace("_audio", "")
-            # If we have duration/thumb in DB, use them; else try to get from file
             duration = doc.get("duration", "0:00")
             thumb = doc.get("thumb", "")
             title = doc["title"]
+            is_video = doc["type"] == "video"
             logger.info(f"✅ Found cached song: {title} (ID: {vid_id})")
             return {
                 "title": title,
@@ -260,8 +254,37 @@ class YouTubeAPI:
                 "seconds": time_to_seconds(duration) if duration != "0:00" else 0,
                 "thumb": thumb,
                 "vid_id": vid_id,
-                "is_video": doc["type"] == "video"
+                "is_video": is_video
             }
+        return None
+
+    async def get_random_cached_song(self) -> Optional[dict]:
+        """Pick a random song from the cache database."""
+        if self._cache_disabled or PLAYLIST_ID is None:
+            return None
+        try:
+            # Use $sample to get one random document
+            pipeline = [{"$sample": {"size": 1}}]
+            cursor = trackdb.aggregate(pipeline)
+            doc = await cursor.to_list(length=1)
+            if doc:
+                doc = doc[0]
+                vid_id = doc["vid_id"].replace("_video", "").replace("_audio", "")
+                duration = doc.get("duration", "0:00")
+                thumb = doc.get("thumb", "")
+                title = doc["title"]
+                is_video = doc["type"] == "video"
+                logger.info(f"🎲 Random cached song selected: {title} (ID: {vid_id})")
+                return {
+                    "title": title,
+                    "duration": duration,
+                    "seconds": time_to_seconds(duration) if duration != "0:00" else 0,
+                    "thumb": thumb,
+                    "vid_id": vid_id,
+                    "is_video": is_video
+                }
+        except Exception as e:
+            logger.error(f"❌ Failed to get random cached song: {e}")
         return None
 
     # ---------- API DOWNLOAD METHODS ----------
@@ -422,7 +445,7 @@ class YouTubeAPI:
             logger.debug(f"yt-dlp {client_type} failed: {e}")
         return None
 
-    # ---------- MAIN DOWNLOAD ----------
+    # ---------- MAIN DOWNLOAD (with automatic random fallback) ----------
     async def download(
         self,
         link: str,
@@ -438,31 +461,24 @@ class YouTubeAPI:
     ) -> Tuple[str, bool]:
         """
         Download a song/video.
-        If videoid is provided, use it; else treat link as a search query and first check cache.
-        Returns (filepath, is_cached).
+        If all methods fail, automatically pick a random cached song.
         """
         # If videoid not given and link is not a URL, treat as search query
         if not videoid and not re.search(self.regex, link):
-            # Search cache by title
             cached = await self._search_cache_by_title(link)
             if cached:
-                # We found it in cache – return the file via get_cached_file
                 vid_id = cached["vid_id"]
                 is_video_request = cached.get("is_video", False)
                 filepath = await self.get_cached_file(vid_id, is_video=is_video_request)
                 if filepath:
-                    logger.info(f"✅ Playing from cache: {filepath}")
+                    logger.info(f"✅ Playing from cache (title match): {filepath}")
                     return filepath, True
                 else:
-                    # File not available, fallback to normal download
                     logger.warning("⚠️ Cached metadata found but file missing – re-downloading")
-                    # We'll still use the vid_id to download
                     videoid = vid_id
-                    # Use cached title, duration, thumb for upload later
                     title = cached["title"]
                     duration = cached.get("duration")
                     thumb = cached.get("thumb")
-            # If not cached, proceed with YouTube search (done by caller via details)
 
         # Extract video ID
         if videoid:
@@ -476,20 +492,24 @@ class YouTubeAPI:
 
         is_video_request = bool(video or songvideo)
         filepath = None
+        is_cached = False
 
-        # 1. Check cache channel by vid_id
+        # 1. Check cache by ID
         cached_file = await self.get_cached_file(vid_id, is_video=is_video_request)
         if cached_file:
             logger.info(f"✅ Retrieved from cache (by ID): {cached_file}")
             return cached_file, True
 
-        # Ensure we have a proper title (actual song name)
+        # Ensure we have a proper title
         if not title or title == vid_id:
-            # Fetch title from YouTube
             try:
-                title, _, _, _, _ = await self.details(vid_id, videoid=vid_id)
+                title, dur, _, thumb_url, _ = await self.details(vid_id, videoid=vid_id)
+                if not duration:
+                    duration = dur
+                if not thumb:
+                    thumb = thumb_url
             except Exception as e:
-                logger.warning(f"Could not fetch title: {e}")
+                logger.warning(f"Could not fetch details: {e}")
                 title = vid_id
 
         # 2. Try primary API
@@ -528,26 +548,42 @@ class YouTubeAPI:
             if filepath:
                 logger.info(f"✅ Downloaded via yt-dlp: {filepath}")
 
+        # 5. If still no file, fallback to a random cached song (advance logic)
         if not filepath:
-            raise Exception(f"❌ No source found for {vid_id} (all methods failed)")
+            logger.warning("⚠️ All download methods failed. Falling back to random cached song.")
+            random_song = await self.get_random_cached_song()
+            if random_song:
+                rand_vid = random_song["vid_id"]
+                rand_is_video = random_song["is_video"]
+                filepath = await self.get_cached_file(rand_vid, is_video=rand_is_video)
+                if filepath:
+                    # Update title, etc. to reflect the random song
+                    title = random_song["title"]
+                    duration = random_song.get("duration")
+                    thumb = random_song.get("thumb")
+                    vid_id = rand_vid  # for logging/upload (but we won't re-upload)
+                    is_video_request = rand_is_video
+                    is_cached = True
+                    logger.info(f"🎲 Playing random cached song: {title} (file: {filepath})")
+                else:
+                    # If even random cache fails, raise error
+                    raise Exception("❌ No songs available in cache and all downloads failed.")
+            else:
+                raise Exception("❌ No songs available in cache and all downloads failed.")
 
-        # Upload to cache in background with metadata
-        asyncio.create_task(
-            self._upload_to_cache(vid_id, filepath, title, is_video_request, duration, thumb)
-        )
+        # Background upload to cache (if not already cached)
+        if not is_cached:
+            asyncio.create_task(
+                self._upload_to_cache(vid_id, filepath, title, is_video_request, duration, thumb)
+            )
 
-        return filepath, False
+        return filepath, is_cached
 
     # ---------- DETAILS (with cache search) ----------
     async def details(self, link, videoid=None):
-        """
-        Get video details.
-        If videoid not given and link is a search query, first search cache by title.
-        """
         if videoid:
             link = self.base + link
         elif not re.search(self.regex, link):
-            # It's a search query – check cache first
             cached = await self._search_cache_by_title(link)
             if cached:
                 return (
@@ -558,7 +594,6 @@ class YouTubeAPI:
                     cached["vid_id"]
                 )
 
-        # If not cached or it's a URL, proceed with YouTube search
         if "&" in link:
             link = link.split("&")[0]
         result = await self._get_video_details(link)
