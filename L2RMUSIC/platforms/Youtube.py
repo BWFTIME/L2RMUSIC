@@ -166,15 +166,17 @@ class YouTubeAPI:
             if exists: 
                 return
 
-            # Zabarjasti chat ko fetch karne ki koshish taki error kam aaye
             try:
                 await app.get_chat(PLAYLIST_ID)
             except Exception:
                 pass
 
             bot_name = app.me.mention if (app and app.me) else "Bot"
+            
+            # Yahan Caption proper Name aur ID ke sath jayega
             cap = f"**Song:** {title}\n**ID:** `{vid_id}`\n**Saved by:** {bot_name}"
             
+            # File ka proper naam set karna
             clean_title = "".join(x for x in title if x.isalnum() or x in " -_")
             
             msg = None
@@ -306,11 +308,27 @@ class YouTubeAPI:
 
         is_video_request = bool(video or songvideo)
 
-        if not title or title == vid_id:
+        # 🔥 STRONG TITLE FETCHER: Ab asli gaane ka naam hi aayega
+        if not title or title == vid_id or "http" in title:
             try:
-                fetched_title = await self.title(link)
-                title = fetched_title if fetched_title else vid_id
+                ydl_opts = {"quiet": True, "extract_flat": True, "skip_download": True}
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(link, download=False)
+                    if info and "title" in info:
+                        title = info["title"]
             except Exception:
+                pass
+            
+            # Agar yt_dlp fail ho jaye, to Pyrogram YoutubeSearch use karo
+            if not title or title == vid_id or "http" in title:
+                try:
+                    fetched_title = await self.title(link)
+                    if fetched_title:
+                        title = fetched_title
+                except Exception:
+                    pass
+            
+            if not title:
                 title = vid_id
 
         # 1. CHECK DB CACHE
@@ -466,4 +484,4 @@ class YouTubeAPI:
             return 0, "Video download failed"
         except Exception as e:
             return 0, f"Video download error: {e}"
-            
+    
