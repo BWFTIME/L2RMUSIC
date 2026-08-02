@@ -20,7 +20,7 @@ YT_API_KEY = "30DxNexGenBots0055e5"
 YTPROXY = "https://tgapi.xbitcode.com"
 
 # Aapka Channel ID
-PLAYLIST_ID = -1004493387604 
+PLAYLIST_ID = -1003616869403 
 MONGO_DB_URI = "mongodb+srv://L2RKING:BWF_MUSIC1@l2rking.1ikcd.mongodb.net/?retryWrites=true&w=majority"
 LIMIT_SECONDS = 900
 DOWNLOAD_DIR = "downloads"
