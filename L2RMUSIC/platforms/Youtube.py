@@ -12,9 +12,10 @@ from L2RMUSIC.utils.formatters import time_to_seconds
 from motor.motor_asyncio import AsyncIOMotorClient
 
 # --- CONFIG VALUES ---
-# Get API KEY and URL from Environment Variables, fallback to default if not found
+# Environment variables for your new API
 YT_API_KEY = os.environ.get("SHRUTI_API_KEY", "ShrutiBotsvfxRF6Qt1ejYXnovI3TG") 
 YTPROXY = os.environ.get("SHRUTI_API_URL", "https://api.shrutibots.site")
+
 PLAYLIST_ID = -1003616869403
 MONGO_DB_URI = "mongodb+srv://L2RKING:BWF_MUSIC1@l2rking.1ikcd.mongodb.net/?retryWrites=true&w=majority"
 LIMIT_SECONDS = 900
@@ -54,7 +55,8 @@ try:
         loop.run_until_complete(load_api_url())
 except RuntimeError:
     pass
-    class YouTubeAPI:
+
+class YouTubeAPI:
     def __init__(self):
         self.base = "https://www.youtube.com/watch?v="
         self.regex = r"(?:youtube\.com|youtu\.be)"
@@ -245,7 +247,8 @@ except RuntimeError:
                                 await self._upload_to_cache(vid_id, filepath, title, is_video)
                                 return 
         except: pass
-                # --- MAIN DOWNLOAD FUNCTION ---
+
+    # --- MAIN DOWNLOAD FUNCTION ---
     async def download(
         self,
         link: str,
@@ -375,4 +378,4 @@ except RuntimeError:
                     if entity.type == MessageEntityType.TEXT_LINK:
                         return entity.url
         return None
-        q
+        
