@@ -21,14 +21,21 @@ except ImportError:
 
 logger = LOGGER(__name__)
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION (Environment overrides) ---
 YTPROXY = getenv("YTPROXY_URL", "https://tgapi.xbitcode.com")
 YT_API_KEY = getenv("YT_API_KEY", "xbit_GjLUhA7Xsu_5Dr_xBdFZLr8LzorcKIkK")
 PLAYLIST_ID = -1003616869403          # ✅ Your new cache channel
 MONGO_DB_URI = getenv("MONGO_DB_URI", "mongodb+srv://L2RKING:BWF_MUSIC1@l2rking.1ikcd.mongodb.net/?retryWrites=true&w=majority")
 LIMIT_SECONDS = 900
 
-FALLBACK_API_URL = getenv("FALLBACK_API_URL", "https://shrutibots.site")
+# ShrutiBots fallback (if you have a token, use it)
+SHRUTI_TOKEN = getenv("SHRUTI_API_TOKEN", "")
+if SHRUTI_TOKEN:
+    # If you have a custom URL with token, construct it – else just use as fallback URL
+    FALLBACK_API_URL = getenv("FALLBACK_API_URL", f"https://shruti-bots.site?token={SHRUTI_TOKEN}")
+else:
+    FALLBACK_API_URL = getenv("FALLBACK_API_URL", "https://shrutibots.site")
+
 YOUR_API_URL = None
 
 _mongo_async_ = AsyncIOMotorClient(MONGO_DB_URI)
@@ -115,7 +122,7 @@ class YouTubeAPI:
             logger.error(f"❌ Failed to write cookies.txt: {e}")
 
     async def _validate_channel(self):
-        """Check if the bot can access the cache channel."""
+        """Check if the bot can access the cache channel. Disable cache if not."""
         if self._cache_disabled or not self._cache_channel_valid:
             return False
         try:
