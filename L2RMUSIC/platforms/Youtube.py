@@ -19,8 +19,9 @@ logger = LOGGER(__name__)
 YT_API_KEY = "30DxNexGenBots0055e5"
 YTPROXY = "https://tgapi.xbitcode.com"
 
-# Aapka Channel ID
-PLAYLIST_ID = -1003616869403 
+# Aapki nayi channel ID set kar di gayi hai
+PLAYLIST_ID = -1004493387604 
+
 MONGO_DB_URI = "mongodb+srv://L2RKING:BWF_MUSIC1@l2rking.1ikcd.mongodb.net/?retryWrites=true&w=majority"
 LIMIT_SECONDS = 900
 DOWNLOAD_DIR = "downloads"
@@ -165,10 +166,15 @@ class YouTubeAPI:
             if exists: 
                 return
 
+            # Zabarjasti chat ko fetch karne ki koshish taki error kam aaye
+            try:
+                await app.get_chat(PLAYLIST_ID)
+            except Exception:
+                pass
+
             bot_name = app.me.mention if (app and app.me) else "Bot"
             cap = f"**Song:** {title}\n**ID:** `{vid_id}`\n**Saved by:** {bot_name}"
             
-            # File ka proper naam set karna
             clean_title = "".join(x for x in title if x.isalnum() or x in " -_")
             
             msg = None
@@ -187,7 +193,7 @@ class YouTubeAPI:
                         file_path, 
                         caption=cap, 
                         title=title,
-                        performer=bot_name, # Taki singer ki jagah bot ka naam aye
+                        performer=bot_name,
                         file_name=f"{clean_title}.mp3"
                     )
             except Exception as e:
@@ -244,7 +250,7 @@ class YouTubeAPI:
         
         return None
 
-    # --- GET RELATED (For Autoplay Fix) ---
+    # --- GET RELATED ---
     async def get_related(self, videoid: str, limit: int = 5) -> list:
         related_tracks = []
         try:
@@ -300,7 +306,6 @@ class YouTubeAPI:
 
         is_video_request = bool(video or songvideo)
 
-        # TITLE FETCH FIX: Agar title pass nahi hua hai, to YouTube se original naam nikal lo
         if not title or title == vid_id:
             try:
                 fetched_title = await self.title(link)
@@ -308,7 +313,7 @@ class YouTubeAPI:
             except Exception:
                 title = vid_id
 
-        # 1. CHECK DB CACHE (Fastest)
+        # 1. CHECK DB CACHE
         cached_path = await self.get_cached_file(vid_id, is_video=is_video_request)
         if cached_path: 
             return cached_path, True
@@ -319,7 +324,7 @@ class YouTubeAPI:
         else:
             downloaded_file = await download_song(link)
 
-        # 3. IF DOWNLOAD SUCCESS, CACHE IT & RETURN
+        # 3. CACHE IT & RETURN
         if downloaded_file:
             await self._upload_to_cache(vid_id, downloaded_file, title, is_video_request)
             return downloaded_file, True
@@ -461,4 +466,4 @@ class YouTubeAPI:
             return 0, "Video download failed"
         except Exception as e:
             return 0, f"Video download error: {e}"
-                    
+            
