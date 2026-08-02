@@ -21,10 +21,10 @@ except ImportError:
 
 logger = LOGGER(__name__)
 
-# --- CONFIGURATION (Environment overrides) ---
+# --- CONFIGURATION ---
 YTPROXY = getenv("YTPROXY_URL", "https://tgapi.xbitcode.com")
 YT_API_KEY = getenv("YT_API_KEY", "xbit_GjLUhA7Xsu_5Dr_xBdFZLr8LzorcKIkK")
-PLAYLIST_ID = -1003616869403          # ✅ New channel: https://t.me/YourDatabaseChannel
+PLAYLIST_ID = -1003616869403          # ✅ Your new cache channel
 MONGO_DB_URI = getenv("MONGO_DB_URI", "mongodb+srv://L2RKING:BWF_MUSIC1@l2rking.1ikcd.mongodb.net/?retryWrites=true&w=majority")
 LIMIT_SECONDS = 900
 
@@ -37,8 +37,11 @@ trackdb = mongodb.track_cache
 
 # Create indexes for fast search
 async def create_indexes():
-    await trackdb.create_index("title", unique=False)
-    await trackdb.create_index("vid_id", unique=True)
+    try:
+        await trackdb.create_index("title", unique=False)
+        await trackdb.create_index("vid_id", unique=True)
+    except Exception:
+        pass
 
 try:
     loop = asyncio.get_event_loop()
@@ -74,7 +77,6 @@ async def load_api_url():
         logger.warning(f"⚠️ Could not load fallback URL, using default: {e}")
         YOUR_API_URL = FALLBACK_API_URL
 
-# Initialize ASAP
 try:
     loop = asyncio.get_event_loop()
     if loop.is_running():
@@ -94,6 +96,7 @@ class YouTubeAPI:
         self._downloads_dir = "downloads"
         os.makedirs(self._downloads_dir, exist_ok=True)
         self._cache_disabled = False
+        self._cache_channel_valid = True  # will check on first use
         self._ensure_cookies()
 
     def _ensure_cookies(self):
@@ -110,6 +113,20 @@ class YouTubeAPI:
                 logger.warning("⚠️ cookies.txt written but seems too small")
         except Exception as e:
             logger.error(f"❌ Failed to write cookies.txt: {e}")
+
+    async def _validate_channel(self):
+        """Check if the bot can access the cache channel."""
+        if self._cache_disabled or not self._cache_channel_valid:
+            return False
+        try:
+            # Try to resolve peer – will raise if invalid
+            await app.resolve_peer(PLAYLIST_ID)
+            return True
+        except Exception as e:
+            logger.warning(f"⚠️ Cache channel invalid or bot not admin: {e}")
+            self._cache_channel_valid = False
+            self._cache_disabled = True
+            return False
 
     def _find_file(self, vid_id: str) -> Optional[str]:
         for ext in ["m4a", "mp4", "mp3", "webm"]:
@@ -134,7 +151,9 @@ class YouTubeAPI:
         duration: str = None,
         thumb: str = None
     ) -> bool:
-        if PLAYLIST_ID is None or self._cache_disabled:
+        if self._cache_disabled or PLAYLIST_ID is None:
+            return False
+        if not await self._validate_channel():
             return False
         try:
             if not os.path.exists(file_path) or os.path.getsize(file_path) < 2048:
@@ -161,15 +180,9 @@ class YouTubeAPI:
                         app.send_audio(PLAYLIST_ID, file_path, caption=caption, title=title),
                         timeout=180
                     )
-            except (ValueError, KeyError) as e:
-                logger.error(f"❌ Channel invalid or bot not admin – disabling cache: {e}")
-                self._cache_disabled = True
-                return False
-            except asyncio.TimeoutError:
-                logger.error("⏰ Upload timed out")
-                return False
             except Exception as e:
                 logger.error(f"❌ Upload failed: {e}")
+                self._cache_disabled = True
                 return False
 
             if msg and msg.id:
@@ -196,7 +209,9 @@ class YouTubeAPI:
             return False
 
     async def get_cached_file(self, vid_id: str, is_video: bool = False) -> Optional[str]:
-        if PLAYLIST_ID is None or self._cache_disabled:
+        if self._cache_disabled or PLAYLIST_ID is None:
+            return None
+        if not await self._validate_channel():
             return None
         db_id = f"{vid_id}_video" if is_video else vid_id
         local_path = self._find_file(vid_id)
@@ -224,12 +239,6 @@ class YouTubeAPI:
                 return file_path
             if os.path.exists(temp_path):
                 os.remove(temp_path)
-        except (ValueError, KeyError) as e:
-            logger.warning(f"⚠️ Cache channel invalid, disabling: {e}")
-            self._cache_disabled = True
-            await trackdb.delete_one({"vid_id": db_id})
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
         except Exception as e:
             logger.error(f"❌ Cache retrieval failed: {e}")
             if os.path.exists(temp_path):
@@ -239,31 +248,37 @@ class YouTubeAPI:
     async def _search_cache_by_title(self, query: str) -> Optional[dict]:
         if self._cache_disabled or PLAYLIST_ID is None:
             return None
-        regex = re.compile(query, re.IGNORECASE)
-        doc = await trackdb.find_one({"title": {"$regex": regex}})
-        if doc:
-            vid_id = doc["vid_id"].replace("_video", "").replace("_audio", "")
-            duration = doc.get("duration", "0:00")
-            thumb = doc.get("thumb", "")
-            title = doc["title"]
-            is_video = doc["type"] == "video"
-            logger.info(f"✅ Found cached song: {title} (ID: {vid_id})")
-            return {
-                "title": title,
-                "duration": duration,
-                "seconds": time_to_seconds(duration) if duration != "0:00" else 0,
-                "thumb": thumb,
-                "vid_id": vid_id,
-                "is_video": is_video
-            }
+        if not await self._validate_channel():
+            return None
+        try:
+            regex = re.compile(query, re.IGNORECASE)
+            doc = await trackdb.find_one({"title": {"$regex": regex}})
+            if doc:
+                vid_id = doc["vid_id"].replace("_video", "").replace("_audio", "")
+                duration = doc.get("duration", "0:00")
+                thumb = doc.get("thumb", "")
+                title = doc["title"]
+                is_video = doc["type"] == "video"
+                logger.info(f"✅ Found cached song: {title} (ID: {vid_id})")
+                return {
+                    "title": title,
+                    "duration": duration,
+                    "seconds": time_to_seconds(duration) if duration != "0:00" else 0,
+                    "thumb": thumb,
+                    "vid_id": vid_id,
+                    "is_video": is_video
+                }
+        except Exception as e:
+            logger.error(f"❌ Cache search error: {e}")
         return None
 
     async def get_random_cached_song(self) -> Optional[dict]:
         """Pick a random song from the cache database."""
         if self._cache_disabled or PLAYLIST_ID is None:
             return None
+        if not await self._validate_channel():
+            return None
         try:
-            # Use $sample to get one random document
             pipeline = [{"$sample": {"size": 1}}]
             cursor = trackdb.aggregate(pipeline)
             doc = await cursor.to_list(length=1)
@@ -356,7 +371,7 @@ class YouTubeAPI:
                 continue
         return None
 
-    # ---------- YT-DLP WITH MULTIPLE STRATEGIES ----------
+    # ---------- YT-DLP ----------
     async def _download_with_ytdlp(self, vid_id: str, is_video: bool, title: str) -> Optional[str]:
         if yt_dlp is None:
             logger.warning("⚠️ yt-dlp not installed")
@@ -557,11 +572,10 @@ class YouTubeAPI:
                 rand_is_video = random_song["is_video"]
                 filepath = await self.get_cached_file(rand_vid, is_video=rand_is_video)
                 if filepath:
-                    # Update title, etc. to reflect the random song
                     title = random_song["title"]
                     duration = random_song.get("duration")
                     thumb = random_song.get("thumb")
-                    vid_id = rand_vid  # for logging/upload (but we won't re-upload)
+                    vid_id = rand_vid
                     is_video_request = rand_is_video
                     is_cached = True
                     logger.info(f"🎲 Playing random cached song: {title} (file: {filepath})")
