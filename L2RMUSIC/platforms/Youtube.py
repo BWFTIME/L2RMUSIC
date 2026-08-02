@@ -15,9 +15,6 @@ from motor.motor_asyncio import AsyncIOMotorClient
 API_URL = os.environ.get("SHRUTI_API_URL", "https://api.shrutibots.site")
 API_KEY = os.environ.get("SHRUTI_API_KEY", "ShrutiBotsbNn7OBwod2NR0aH88nXR")  # Get from @SHRUTIAPIBOT
 DOWNLOAD_DIR = "downloads"
-PLAYLIST_ID = -1003616869403
-MONGO_DB_URI = "mongodb+srv://L2RKING:BWF_MUSIC1@l2rking.1ikcd.mongodb.net/?retryWrites=true&w=majority"
-LIMIT_SECONDS = 900
 
 # --- FALLBACK API CONFIG ---
 YOUR_API_URL = None
