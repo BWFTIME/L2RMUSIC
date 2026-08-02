@@ -6,7 +6,7 @@ import aiohttp
 import random
 import yt_dlp
 import logging
-from AloneX.helpers import Track, utils
+from L2RMUSIC.helpers import Track, utils
 
 # Local logger – avoids importing logger from AloneX
 logger = logging.getLogger(__name__)
