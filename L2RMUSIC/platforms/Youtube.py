@@ -5,8 +5,11 @@ import asyncio
 import aiohttp
 import random
 import yt_dlp
-from L2RMUSIC import logger, config
-from L2RMUSIC.helpers import Track, utils
+import logging
+from AloneX.helpers import Track, utils
+
+# Local logger – avoids importing logger from AloneX
+logger = logging.getLogger(__name__)
 
 API_URL = os.environ.get("SHRUTI_API_URL", "https://api.shrutibots.site")
 API_KEY = os.environ.get("SHRUTI_API_KEY", "ShrutiBotsbNn7OBwod2NR0aH88nXR")  # Get from @SHRUTIAPIBOT
@@ -134,7 +137,6 @@ class YouTube:
     # ------------------------------------------------------------
     async def search(self, query: str, m_id: int, video: bool = False) -> Track | None:
         try:
-            # Use yt-dlp's built-in search extractor
             opts = {
                 "quiet": True,
                 "no_warnings": True,
@@ -148,6 +150,222 @@ class YouTube:
                 "extractor_args": {"youtube": {"player_client": ["android"]}},
             }
             info = await self._run_ydl(opts, f"ytsearch1:{query}")
+            entries = info.get("entries", [])
+            if not entries:
+                return None
+
+            data = entries[0]
+            if not data:
+                return None
+
+            track = Track(
+                id=data.get("id"),
+                channel_name=data.get("channel") or data.get("uploader") or "YouTube",
+                duration=data.get("duration"),
+                duration_sec=utils.to_seconds(data.get("duration")) if data.get("duration") else 0,
+                message_id=m_id,
+                title=(data.get("title") or "Unknown")[:25],
+                thumbnail=data.get("thumbnail"),
+                url=data.get("webpage_url") or f"https://www.youtube.com/watch?v={data.get('id')}",
+                view_count=data.get("view_count"),
+                video=video,
+            )
+            return track
+
+        except Exception as e:
+            logger.error(f"Search error: {e}")
+        return None
+
+    # ------------------------------------------------------------
+    #  PLAYLIST – uses yt-dlp directly (no py_yt)
+    # ------------------------------------------------------------
+    async def playlist(self, limit: int, user: str, url: str, video: bool) -> list[Track]:
+        tracks = []
+        try:
+            opts = {
+                "quiet": True,
+                "no_warnings": True,
+                "extract_flat": "in_playlist",
+                "skip_download": True,
+                "ignoreerrors": True,
+                "geo_bypass": True,
+                "socket_timeout": 10,
+                "retries": 1,
+                "extractor_retries": 1,
+                "extractor_args": {"youtube": {"player_client": ["android"]}},
+            }
+            info = await self._run_ydl(opts, url)
+            entries = info.get("entries", [])[:limit]
+            for entry in entries:
+                if not entry:
+                    continue
+                track = Track(
+                    id=entry.get("id"),
+                    channel_name=entry.get("channel") or entry.get("uploader") or "YouTube",
+                    duration=entry.get("duration"),
+                    duration_sec=utils.to_seconds(entry.get("duration")) if entry.get("duration") else 0,
+                    title=(entry.get("title") or "Unknown")[:25],
+                    thumbnail=entry.get("thumbnail"),
+                    url=entry.get("webpage_url") or f"https://www.youtube.com/watch?v={entry.get('id')}",
+                    user=user,
+                    view_count=entry.get("view_count"),
+                    video=video,
+                )
+                tracks.append(track)
+        except Exception as e:
+            logger.error(f"Playlist error: {e}")
+        return tracks
+
+    # ------------------------------------------------------------
+    #  DOWNLOAD – unchanged (uses external API)
+    # ------------------------------------------------------------
+    async def download(self, video_id: str, video: bool = False) -> str | None:
+        if not video_id or len(video_id) < 3:
+            return None
+        if video:
+            return await download_video(video_id)
+        else:
+            return await download_song(video_id)
+
+    # ------------------------------------------------------------
+    #  Helpers for formatting (unchanged)
+    # ------------------------------------------------------------
+    def _format_duration(self, seconds: int) -> str:
+        seconds = max(int(seconds or 0), 0)
+        h, rem = divmod(seconds, 3600)
+        m, s = divmod(rem, 60)
+        if h:
+            return f"{h}:{m:02d}:{s:02d}"
+        return f"{m}:{s:02d}"
+
+    def _format_views(self, count) -> str:
+        if not count:
+            return ""
+        count = int(count)
+        if count >= 1_000_000:
+            return f"{count / 1_000_000:.1f}M views"
+        if count >= 1_000:
+            return f"{count / 1_000:.1f}K views"
+        return f"{count} views"
+
+    # ------------------------------------------------------------
+    #  RELATED – uses yt-dlp mix + fallback search (unchanged)
+    # ------------------------------------------------------------
+    def _extract_related(self, video_id: str) -> dict | None:
+        opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "extract_flat": "in_playlist",
+            "skip_download": True,
+            "ignoreerrors": True,
+            "geo_bypass": True,
+            "socket_timeout": 10,
+            "retries": 1,
+            "extractor_retries": 1,
+            "extractor_args": {"youtube": {"player_client": ["android"]}},
+        }
+        cookie = self.get_cookies()
+        if cookie:
+            opts["cookiefile"] = cookie
+
+        url = f"https://www.youtube.com/watch?v={video_id}&list=RD{video_id}"
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            return ydl.extract_info(url, download=False)
+
+    async def _related_from_mix(self, video_id: str, played: set[str]) -> Track | None:
+        # Import config only here to avoid circular import
+        from AloneX import config
+
+        loop = asyncio.get_event_loop()
+        try:
+            info = await asyncio.wait_for(
+                loop.run_in_executor(None, self._extract_related, video_id),
+                timeout=20,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(f"[Autoplay] Mix fetch timed out for {video_id}.")
+            return None
+        except Exception as e:
+            logger.error(f"[Autoplay] Mix fetch failed for {video_id}: {e}")
+            return None
+
+        entries = (info or {}).get("entries") or []
+        for entry in entries:
+            if not entry:
+                continue
+
+            eid = entry.get("id")
+            if not eid or eid in played:
+                continue
+
+            title = entry.get("title") or "Unknown"
+            if title.lower() in ("[deleted video]", "[private video]"):
+                continue
+
+            duration = int(entry.get("duration") or 0)
+            if duration <= 0 or duration > config.DURATION_LIMIT:
+                continue
+
+            thumbs = entry.get("thumbnails") or []
+            thumbnail = thumbs[-1]["url"].split("?")[0] if thumbs else None
+
+            return Track(
+                id=eid,
+                channel_name=entry.get("channel") or entry.get("uploader") or "YouTube",
+                duration=self._format_duration(duration),
+                duration_sec=duration,
+                title=title[:25],
+                thumbnail=thumbnail,
+                url=f"https://www.youtube.com/watch?v={eid}",
+                view_count=self._format_views(entry.get("view_count")),
+                video=False,
+            )
+        return None
+
+    async def _related_from_search(self, current: Track, played: set[str]) -> Track | None:
+        """Fallback using the same search backend (now yt-dlp)."""
+        # Import config only here to avoid circular import
+        from AloneX import config
+
+        queries = []
+        if current.channel_name:
+            queries.append(f"{current.channel_name}")
+        if current.title:
+            queries.append(f"{current.title}")
+
+        for query in queries:
+            try:
+                track = await self.search(query, m_id=0, video=False)
+                if track and track.id not in played:
+                    # re‑set the message_id to 0 (irrelevant for autoplay)
+                    track.message_id = 0
+                    # Check duration limit (search already does but we re-check)
+                    if track.duration_sec > config.DURATION_LIMIT:
+                        continue
+                    return track
+            except Exception as e:
+                logger.error(f"[Autoplay] Search fallback failed for {query!r}: {e}")
+                continue
+        return None
+
+    async def get_related(self, current: Track, played: list[str] | None = None) -> Track | None:
+        if not current or not current.id:
+            return None
+
+        played = set(played or [])
+        played.add(current.id)
+
+        related = await self._related_from_mix(current.id, played)
+        if related:
+            return related
+
+        logger.info(f"[Autoplay] Mix returned nothing for {current.id}, trying search fallback.")
+        related = await self._related_from_search(current, played)
+        if related:
+            return related
+
+        logger.warning(f"[Autoplay] No related track found for {current.id}.")
+        return None            info = await self._run_ydl(opts, f"ytsearch1:{query}")
             entries = info.get("entries", [])
             if not entries:
                 return None
