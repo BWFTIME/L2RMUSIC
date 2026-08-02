@@ -1,12 +1,15 @@
-# FIX BY SHONA @THECDERQUEEN
+import asyncio
 import os
 import re
-import asyncio
+from typing import Union
 import aiohttp
-import random
-import yt_dlp
-import logging
-from L2RMUSIC.helpers import Track, utils   # <-- changed from AloneX
+import aiofiles
+from pyrogram.enums import MessageEntityType
+from pyrogram.types import Message
+from youtubesearchpython.__future__ import VideosSearch, CustomSearch
+from L2RMUSIC import LOGGER, app 
+from L2RMUSIC.utils.formatters import time_to_seconds
+from motor.motor_asyncio import AsyncIOMotorClient
 
 logger = logging.getLogger(__name__)
 
