@@ -114,6 +114,53 @@ class YouTubeAPI:
                         pass
         return None
 
+    # ---------- SCAN TELEGRAM CHANNEL FOR CACHE & NAMES ----------
+    async def _scan_channel_for_song(self, query: str, is_video: bool) -> Optional[str]:
+        """Scan telegram channel messages/captions to find matching song by name or ID."""
+        if PLAYLIST_ID is None or self._cache_disabled:
+            return None
+        try:
+            logger.info(f"🔍 Scanning channel for query: '{query}'")
+            query_lower = query.lower()
+            
+            # Iterate through recent messages in the playlist/channel
+            async for message in app.get_chat_history(PLAYLIST_ID, limit=100):
+                if not message.caption:
+                    continue
+                
+                caption = message.caption
+                # Extract Video ID and Song title from standard format
+                vid_match = re.search(r"\*\*🆔 ID:\*\*\s*`?([a-zA-Z0-9_-]{11})`?", caption)
+                title_match = re.search(r"\*\*🎵 Song:\*\*\s*(.*)", caption)
+                
+                found_vid = vid_match.group(1) if vid_match else None
+                found_title = title_match.group(1).strip().lower() if title_match else ""
+                
+                # Match if query matches video ID, title, or appears anywhere in caption
+                if (found_vid and query_lower in found_vid.lower()) or \
+                   (found_title and query_lower in found_title) or \
+                   (query_lower in caption.lower()):
+                    
+                    if found_vid:
+                        logger.info(f"✅ Found match in channel! Video ID: {found_vid}")
+                        # Save to MongoDB for future instant retrieval
+                        db_id = f"{found_vid}_video" if is_video else found_vid
+                        await trackdb.update_one(
+                            {"vid_id": db_id},
+                            {"$set": {"message_id": message.id, "title": found_title, "type": "video" if is_video else "audio"}},
+                            upsert=True
+                        )
+                    
+                    media = message.video or message.audio or message.document or message.voice
+                    if media:
+                        temp_path = os.path.join(self._downloads_dir, f"{(found_vid or 'cache')}.mp4")
+                        file_path = await app.download_media(media.file_id, file_name=temp_path)
+                        if file_path and os.path.exists(file_path) and os.path.getsize(file_path) > 2048:
+                            return file_path
+        except Exception as e:
+            logger.warning(f"⚠️ Channel scan error: {e}")
+        return None
+
     # ---------- CACHE HANDLING ----------
     async def _upload_to_cache(self, vid_id: str, file_path: str, title: str, is_video: bool) -> bool:
         if PLAYLIST_ID is None or self._cache_disabled:
@@ -233,7 +280,6 @@ class YouTubeAPI:
         if not YOUR_API_URL:
             await load_api_url()
 
-        # Try custom fallback first, then hardcoded one
         apis_to_try = [YOUR_API_URL, FALLBACK_API_URL] if YOUR_API_URL != FALLBACK_API_URL else [FALLBACK_API_URL]
 
         ext = "mp4" if is_video else "mp3"
@@ -243,7 +289,6 @@ class YouTubeAPI:
             try:
                 logger.info(f"🔄 Trying fallback API: {api_base}")
                 async with aiohttp.ClientSession() as session:
-                    # 1) Get token
                     params = {"url": vid_id, "type": "video" if is_video else "audio"}
                     async with session.get(f"{api_base}/download", params=params, timeout=15) as resp:
                         if resp.status != 200:
@@ -255,7 +300,6 @@ class YouTubeAPI:
                             logger.warning(f"⚠️ {api_base} no download_token")
                             continue
 
-                    # 2) Stream file
                     stream_url = f"{api_base}/stream/{vid_id}?type={'video' if is_video else 'audio'}"
                     headers = {"X-Download-Token": token}
                     async with session.get(stream_url, headers=headers, timeout=aiohttp.ClientTimeout(total=300)) as stream_resp:
@@ -284,7 +328,6 @@ class YouTubeAPI:
             logger.warning("⚠️ yt-dlp not installed")
             return None
 
-        # Try different client strategies
         clients_to_try = [
             {'use_cookies': True, 'client': 'android'},
             {'use_cookies': True, 'client': 'ios'},
@@ -319,14 +362,12 @@ class YouTubeAPI:
                 }
             }
 
-            # Cookies
             cookies_exist = os.path.exists("cookies.txt") and os.path.getsize("cookies.txt") > 20
             if use_cookies and cookies_exist:
                 opts['cookiefile'] = 'cookies.txt'
             elif use_cookies and not cookies_exist:
                 return None
 
-            # User-agent
             if client_type == 'android':
                 opts['user_agent'] = 'Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Mobile Safari/537.36'
             elif client_type == 'ios':
@@ -349,7 +390,6 @@ class YouTubeAPI:
             def download_sync():
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     ydl.download([f"https://www.youtube.com/watch?v={vid_id}"])
-                # Find downloaded file
                 for f in os.listdir(self._downloads_dir):
                     if f.startswith(vid_id):
                         full = os.path.join(self._downloads_dir, f)
@@ -383,26 +423,34 @@ class YouTubeAPI:
         format_id: Union[bool, str] = None,
         title: Union[bool, str] = None,
     ) -> Tuple[str, bool]:
-        # Extract video ID
+        # Extract video ID or query text
         if videoid:
             vid_id = link
             link = self.base + link
         else:
             if "v=" in link:
                 vid_id = link.split('v=')[-1].split('&')[0]
+            elif "youtu.be/" in link:
+                vid_id = link.split('/')[-1].split('?')[0]
             else:
-                vid_id = link.split('/')[-1]
+                vid_id = link.strip()
 
         is_video_request = bool(video or songvideo)
         filepath = None
 
-        # 1. Check cache channel
+        # 1. Check cache channel via Database
         cached = await self.get_cached_file(vid_id, is_video=is_video_request)
         if cached:
-            logger.info(f"✅ Retrieved from cache: {cached}")
+            logger.info(f"✅ Retrieved from cache (DB): {cached}")
             return cached, False
 
-        # 2. Try primary API
+        # 2. Scan Telegram Channel by Name/ID directly if not found in DB
+        scanned_file = await self._scan_channel_for_song(vid_id, is_video=is_video_request)
+        if scanned_file:
+            logger.info(f"✅ Retrieved from Telegram channel scan: {scanned_file}")
+            return scanned_file, False
+
+        # 3. Try primary API
         logger.info("🔄 Trying primary API...")
         api_url = await self.get_api_url(vid_id, is_video_request)
         if api_url:
@@ -424,14 +472,14 @@ class YouTubeAPI:
             except Exception as e:
                 logger.warning(f"⚠️ Primary API download error: {e}")
 
-        # 3. Fallback API
+        # 4. Fallback API
         if not filepath:
             logger.info("🔄 Trying fallback API...")
             filepath = await self._external_api_download(vid_id, is_video_request)
             if filepath:
                 logger.info(f"✅ Downloaded via fallback API: {filepath}")
 
-        # 4. yt-dlp
+        # 5. yt-dlp
         if not filepath:
             logger.info("🔄 Trying yt-dlp...")
             filepath = await self._download_with_ytdlp(vid_id, is_video_request, title or vid_id)
@@ -550,3 +598,4 @@ class YouTubeAPI:
                     if e.type == MessageEntityType.TEXT_LINK:
                         return e.url
         return None
+
