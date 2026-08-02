@@ -23,7 +23,7 @@ logger = LOGGER(__name__)
 # --- CONFIG ---
 YT_API_KEY = "ShrutiBotsTFDOmDYUMaDd6tfRiogD"
 YTPROXY = "https://tgapi.xbitcode.com"
-PLAYLIST_ID = -1003616869403          # Bot must be admin in this channel
+PLAYLIST_ID = -1001859664687          # Updated for https://t.me/YouTubedatabase (Bot must be admin here)
 MONGO_DB_URI = "mongodb+srv://L2RKING:BWF_MUSIC1@l2rking.1ikcd.mongodb.net/?retryWrites=true&w=majority"
 LIMIT_SECONDS = 900
 
@@ -90,7 +90,7 @@ class YouTubeAPI:
         with open("cookies.txt", "w") as f:
             f.write(content)
 
-        if os.path.getsize("cookies.txt") > 50:
+        if os.path.exists("cookies.txt") and os.path.getsize("cookies.txt") > 50:
             logger.info("✅ cookies.txt successfully created from COOKIES_CONTENT")
         else:
             logger.error("❌ cookies.txt was written but is too small – check COOKIES_CONTENT")
@@ -117,7 +117,7 @@ class YouTubeAPI:
             db_id = f"{vid_id}_video" if is_video else vid_id
             if await trackdb.find_one({"vid_id": db_id}):
                 return True
-            logger.info(f"📤 Uploading to channel: {title}")
+            logger.info(f"📤 Uploading to channel (YouTubedatabase): {title}")
             caption = f"**🎵 Song:** {title}\n**🆔 ID:** `{vid_id}`\n**💾 Saved by:** {app.me.mention}"
             try:
                 if is_video:
@@ -131,7 +131,7 @@ class YouTubeAPI:
                         timeout=180
                     )
             except (ValueError, KeyError) as e:
-                logger.error(f"❌ Channel invalid – disabling cache permanently: {e}")
+                logger.error(f"❌ Channel invalid or bot not admin – disabling cache permanently: {e}")
                 self._cache_disabled = True
                 return False
             except asyncio.TimeoutError:
@@ -140,13 +140,14 @@ class YouTubeAPI:
             except Exception as e:
                 logger.error(f"❌ Upload failed: {e}")
                 return False
+            
             if msg and msg.id:
                 await trackdb.update_one(
                     {"vid_id": db_id},
                     {"$set": {"message_id": msg.id, "title": title, "type": "video" if is_video else "audio"}},
                     upsert=True
                 )
-                logger.info(f"✅ Upload complete (msg_id={msg.id})")
+                logger.info(f"✅ Upload complete toTubedatabase (msg_id={msg.id})")
                 return True
             return False
         except Exception as e:
@@ -166,7 +167,7 @@ class YouTubeAPI:
         message_id = doc['message_id']
         temp_path = os.path.join(self._downloads_dir, f"{vid_id}.mp4")
         try:
-            logger.info(f"🔄 Fetching from channel (msg_id={message_id})")
+            logger.info(f"🔄 Fetching from Tubedatabase channel (msg_id={message_id})")
             cached_msg = await app.get_messages(PLAYLIST_ID, message_id)
             if not cached_msg or cached_msg.empty:
                 await trackdb.delete_one({"vid_id": db_id})
@@ -371,11 +372,12 @@ class YouTubeAPI:
                 vid_id = link.split('/')[-1]
 
         is_video_request = bool(video or songvideo)
+        filepath = None
 
         # 1. Cache
         cached = await self.get_cached_file(vid_id, is_video=is_video_request)
         if cached:
-            logger.info(f"✅ Using cached file: {cached}")
+            logger.info(f"✅ Using cached file from Tubedatabase: {cached}")
             return cached, False
 
         # 2. Primary API
@@ -397,7 +399,10 @@ class YouTubeAPI:
             except Exception as e:
                 logger.error(f"❌ Primary download failed: {e}")
                 if 'temp_file' in locals() and os.path.exists(temp_file):
-                    os.remove(temp_file)
+                    try:
+                        os.remove(temp_file)
+                    except:
+                        pass
 
         # 3. Fallback API
         if not filepath:
@@ -410,12 +415,12 @@ class YouTubeAPI:
         if not filepath:
             raise Exception(f"No audio/video source found for: {vid_id}")
 
-        # 5. Upload to cache (if channel works)
-        await self._upload_to_cache(vid_id, filepath, title or vid_id, is_video_request)
+        # 5. Upload to cache channel (YouTubedatabase)
+        asyncio.create_task(self._upload_to_cache(vid_id, filepath, title or vid_id, is_video_request))
 
         return filepath, False
 
-    # --- Utility methods unchanged ---
+    # --- Utility methods ---
     async def playlist(self, link, limit, user_id, videoid=None):
         return []
 
