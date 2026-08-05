@@ -94,7 +94,20 @@ class Ashish(Client):
                 f"Failed to check bot's admin status in the log group/channel.\n  Reason: {type(ex).__name__} - {ex}."
             )
             exit(1)
-            
+
+        # ---------- 🆕 FIX: Pre-resolve Cache Channel ----------
+        try:
+            # Use the same CACHE_CHANNEL_ID as defined in config
+            cache_chat_id = int(config.CACHE_CHANNEL_ID)
+            await self.get_chat(cache_chat_id)
+            LOGGER(__name__).info(f"✅ Cache channel resolved: {cache_chat_id}")
+        except AttributeError:
+            LOGGER(__name__).warning("⚠️ CACHE_CHANNEL_ID not defined in config. Skipping pre-resolution.")
+        except Exception as e:
+            LOGGER(__name__).error(f"❌ Failed to resolve cache channel: {e}")
+            # Optional: exit if cache channel is critical (uncomment if needed)
+            # exit(1)
+
         LOGGER(__name__).info(f"Music Bot Started as {self.name}")
 
     async def stop(self):
