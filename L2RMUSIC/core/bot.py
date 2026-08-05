@@ -2,9 +2,8 @@ import asyncio
 from pyrogram import Client, errors
 from pyrogram.enums import ChatMemberStatus, ParseMode
 
+# ✅ ABSOLUTE import – config.py root par hai
 import config
-
-# Assuming this path is correct based on the traceback
 from ..logging import LOGGER
 
 
@@ -24,44 +23,32 @@ class Ashish(Client):
     async def start(self):
         LOGGER(__name__).info("Attempting to connect to Telegram...")
         
-        # Continuous loop to handle FloodWait errors during initial connection
         while True:
             try:
-                # 1. Attempt to connect and log in
                 await super().start()
-                break  # Exit loop if connection is successful
-                
+                break
             except errors.FloodWait as e:
-                # Handle temporary flood wait by sleeping and retrying
                 wait_time = e.value
                 LOGGER(__name__).warning(
                     f"⚠️ Telegram FloodWait during login. Waiting for {wait_time} seconds before retrying..."
                 )
                 await asyncio.sleep(wait_time)
-                
             except (ValueError, errors.AuthKeyUnregistered, errors.BotMethodInvalid, errors.BadRequest) as ex:
-                # Handle fatal configuration errors (invalid token, API hash, etc.)
                 LOGGER(__name__).error(
                     f"❌ Fatal Login Error! Please check your BOT_TOKEN, API_ID, and API_HASH.\n  Reason: {type(ex).__name__} - {ex}"
                 )
-                exit(1) # Exit application immediately on fatal error
-                
+                exit(1)
             except Exception as ex:
-                # Catch any other unexpected error during the start process
                 LOGGER(__name__).error(
                     f"Bot failed to start due to an unexpected error: {type(ex).__name__} - {ex}"
                 )
                 exit(1)
         
-        # --- POST-LOGIN SETUP ---
-        
-        # Set bot identity details
         self.id = self.me.id
         self.name = self.me.first_name + " " + (self.me.last_name or "")
         self.username = self.me.username
         self.mention = self.me.mention
 
-        # 2. Check Logger/Log Channel Access and send startup message
         try:
             await self.send_message(
                 chat_id=config.LOGGER_ID,
@@ -78,7 +65,6 @@ class Ashish(Client):
             )
             exit(1)
 
-        # 3. Check for Admin status in log channel
         try:
             a = await self.get_chat_member(config.LOGGER_ID, self.id)
             if a.status != ChatMemberStatus.ADMINISTRATOR:
@@ -92,19 +78,16 @@ class Ashish(Client):
             )
             exit(1)
 
-        # ---------- 🆕 FIX: Pre-resolve Cache Channel (to avoid Peer id invalid) ----------
+        # Cache channel resolve
         try:
-            # Use the same CACHE_CHANNEL_ID as defined in config (or fallback to env)
             if hasattr(config, 'CACHE_CHANNEL_ID'):
                 cache_chat_id = int(config.CACHE_CHANNEL_ID)
             else:
-                # If not in config, try to get from environment variable
                 import os
                 cache_chat_id = int(os.environ.get("CACHE_CHANNEL_ID", 0))
                 if cache_chat_id == 0:
                     raise ValueError("CACHE_CHANNEL_ID not set")
 
-            # Resolve the chat (this will cache the peer in Pyrogram's internal storage)
             await self.get_chat(cache_chat_id)
             LOGGER(__name__).info(f"✅ Cache channel resolved: {cache_chat_id}")
 
@@ -112,13 +95,9 @@ class Ashish(Client):
             LOGGER(__name__).warning("⚠️ CACHE_CHANNEL_ID not defined in config. Skipping pre-resolution.")
         except ValueError:
             LOGGER(__name__).error("❌ CACHE_CHANNEL_ID is invalid or not set. Please set it in config or as env variable.")
-            # Uncomment below to exit if cache channel is critical
-            # exit(1)
         except Exception as e:
             LOGGER(__name__).error(f"❌ Failed to resolve cache channel: {e}")
             LOGGER(__name__).error("   Make sure the bot is a member of that channel and the ID is correct.")
-            # Uncomment below to exit if cache channel is critical
-            # exit(1)
 
         LOGGER(__name__).info(f"Music Bot Started as {self.name}")
 
