@@ -8,39 +8,39 @@ import yt_dlp
 from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
 from youtubesearchpython.__future__ import VideosSearch, CustomSearch
-from py_yt import Playlist # Playlist ke liye ye import add kiya hai pehli file se
+from py_yt import Playlist
 from L2RMUSIC import LOGGER, app 
 from L2RMUSIC.utils.formatters import time_to_seconds
 from motor.motor_asyncio import AsyncIOMotorClient
 
 logger = LOGGER(__name__)
 
-# --- CONFIG VALUES ---
-YT_API_KEY = "30DxNexGenBots0055e5" # Aapki dusri file se
-YTPROXY = "https://tgapi.xbitcode.com"
-PLAYLIST_ID = -1003616869403
-MONGO_DB_URI = "mongodb+srv://L2RKING:BWF_MUSIC1@l2rking.1ikcd.mongodb.net/?retryWrites=true&w=majority"
-LIMIT_SECONDS = 900
-DOWNLOAD_DIR = "downloads"
+# --- CONFIG (Use env variables for safety) ---
+YT_API_KEY = os.environ.get("YT_API_KEY", "30DxNexGenBots0055e5")
+YTPROXY = os.environ.get("YTPROXY", "https://tgapi.xbitcode.com")
+PLAYLIST_ID = os.environ.get("CACHE_CHANNEL_ID", -1003616869403)  # yeh value update karo agar channel change ho
+MONGO_DB_URI = os.environ.get("MONGO_DB_URI", "mongodb+srv://L2RKING:BWF_MUSIC1@l2rking.1ikcd.mongodb.net/?retryWrites=true&w=majority")
+LIMIT_SECONDS = int(os.environ.get("LIMIT_SECONDS", 900))
+DOWNLOAD_DIR = os.environ.get("DOWNLOAD_DIR", "downloads")
 
-# --- NEW API CONFIG (From first file) ---
+# --- API CONFIG ---
 API_URL = os.environ.get("SHRUTI_API_URL", "https://shrutibots.site")
-API_KEY = os.environ.get("SHRUTI_API_KEY", "ShrutiBotswUiyhdS8Fmjt8limDX69") 
-SHRUTI_RELATED_URL = "https://shrutibots.site/related"
-SHRUTI_RELATED_KEY = "ShrutiBotsV1npoyhq8PrrjlVADSPU"
-INFLEX_RELATED_URL = "https://teaminflex.xyz/related"
-INFLEX_RELATED_KEY = "INFLEX99600328D"
+API_KEY = os.environ.get("SHRUTI_API_KEY", "ShrutiBotswUiyhdS8Fmjt8limDX69")
+SHRUTI_RELATED_URL = os.environ.get("SHRUTI_RELATED_URL", "https://shrutibots.site/related")
+SHRUTI_RELATED_KEY = os.environ.get("SHRUTI_RELATED_KEY", "ShrutiBotsV1npoyhq8PrrjlVADSPU")
+INFLEX_RELATED_URL = os.environ.get("INFLEX_RELATED_URL", "https://teaminflex.xyz/related")
+INFLEX_RELATED_KEY = os.environ.get("INFLEX_RELATED_KEY", "INFLEX99600328D")
 
-# --- FALLBACK API CONFIG ---
-YOUR_API_URL = None
+# --- FALLBACK API (from pastebin) ---
 FALLBACK_API_URL = "https://shrutibots.site"
+YOUR_API_URL = None
 
-# --- DATABASE CONNECTION ---
+# --- DATABASE ---
 _mongo_async_ = AsyncIOMotorClient(MONGO_DB_URI)
 mongodb = _mongo_async_.L2RMUSIC
 trackdb = mongodb.track_cache
 
-# --- HELPER FUNCTIONS ---
+# --- HELPER ---
 def get_time_to_seconds(time):
     stringt = str(time)
     return sum(int(x) * 60 ** i for i, x in enumerate(reversed(stringt.split(":"))))
@@ -51,8 +51,7 @@ async def load_api_url():
         async with aiohttp.ClientSession() as session:
             async with session.get("https://pastebin.com/raw/rLsBhAQa", timeout=aiohttp.ClientTimeout(total=10)) as response:
                 if response.status == 200:
-                    content = await response.text()
-                    YOUR_API_URL = content.strip()
+                    YOUR_API_URL = (await response.text()).strip()
                     logger.info(f"Fallback API URL loaded: {YOUR_API_URL}")
                 else:
                     YOUR_API_URL = FALLBACK_API_URL
@@ -68,72 +67,111 @@ try:
 except RuntimeError:
     pass
 
-# --- DIRECT DOWNLOAD FUNCTIONS (From First File) ---
+# --- YT-DLP FALLBACK DOWNLOAD FUNCTIONS ---
+async def _download_with_ytdlp(link: str, is_video: bool = False) -> Union[str, None]:
+    """Direct download using yt-dlp as fallback."""
+    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+    video_id = link.split("v=")[-1].split("&")[0] if "v=" in link else link.split("/")[-1]
+    if not video_id or len(video_id) < 3:
+        return None
+
+    ext = "mp4" if is_video else "mp3"
+    file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}")
+    if os.path.exists(file_path) and os.path.getsize(file_path) > 2048:
+        return file_path
+
+    ydl_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "outtmpl": file_path,
+        "format": "bestaudio/best" if not is_video else "bestvideo+bestaudio/best",
+        "postprocessors": [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "192",
+        }] if not is_video else [],
+        "noplaylist": True,
+    }
+    try:
+        loop = asyncio.get_event_loop()
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            await loop.run_in_executor(None, lambda: ydl.download([link]))
+        if os.path.exists(file_path) and os.path.getsize(file_path) > 2048:
+            return file_path
+        return None
+    except Exception as e:
+        logger.error(f"yt-dlp download error: {e}")
+        if os.path.exists(file_path):
+            try: os.remove(file_path)
+            except: pass
+        return None
+
 async def download_song(link: str) -> str:
+    """Try API first, then fallback to yt-dlp."""
     video_id = link.split("v=")[-1].split("&")[0] if "v=" in link else link.split("/")[-1]
     if not video_id or len(video_id) < 3:
         return None
 
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp3")
-    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+    if os.path.exists(file_path) and os.path.getsize(file_path) > 2048:
         return file_path
 
+    # Try API
     try:
         async with aiohttp.ClientSession() as session:
+            # Use YOUR_API_URL if available, else API_URL
+            base_url = YOUR_API_URL if YOUR_API_URL else API_URL
             async with session.get(
-                f"{API_URL}/download",
+                f"{base_url}/download",
                 params={"url": video_id, "type": "audio", "api_key": API_KEY},
                 timeout=aiohttp.ClientTimeout(total=300)
             ) as resp:
-                if resp.status != 200:
-                    return None
-                with open(file_path, "wb") as f:
-                    async for chunk in resp.content.iter_chunked(131072):
-                        f.write(chunk)
-        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-            return file_path
-        return None
+                if resp.status == 200:
+                    with open(file_path, "wb") as f:
+                        async for chunk in resp.content.iter_chunked(131072):
+                            f.write(chunk)
+                    if os.path.exists(file_path) and os.path.getsize(file_path) > 2048:
+                        return file_path
     except Exception as e:
-        logger.error(f"Download Song Error: {e}")
-        if os.path.exists(file_path):
-            try: os.remove(file_path)
-            except: pass
-        return None
+        logger.warning(f"API download failed: {e}, trying yt-dlp...")
+
+    # Fallback to yt-dlp
+    return await _download_with_ytdlp(link, is_video=False)
 
 async def download_video(link: str) -> str:
+    """Try API first, then fallback to yt-dlp."""
     video_id = link.split("v=")[-1].split("&")[0] if "v=" in link else link.split("/")[-1]
     if not video_id or len(video_id) < 3:
         return None
 
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp4")
-    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+    if os.path.exists(file_path) and os.path.getsize(file_path) > 2048:
         return file_path
 
+    # Try API
     try:
         async with aiohttp.ClientSession() as session:
+            base_url = YOUR_API_URL if YOUR_API_URL else API_URL
             async with session.get(
-                f"{API_URL}/download",
+                f"{base_url}/download",
                 params={"url": video_id, "type": "video", "api_key": API_KEY},
                 timeout=aiohttp.ClientTimeout(total=600)
             ) as resp:
-                if resp.status != 200:
-                    return None
-                with open(file_path, "wb") as f:
-                    async for chunk in resp.content.iter_chunked(131072):
-                        f.write(chunk)
-        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-            return file_path
-        return None
+                if resp.status == 200:
+                    with open(file_path, "wb") as f:
+                        async for chunk in resp.content.iter_chunked(131072):
+                            f.write(chunk)
+                    if os.path.exists(file_path) and os.path.getsize(file_path) > 2048:
+                        return file_path
     except Exception as e:
-        logger.error(f"Download Video Error: {e}")
-        if os.path.exists(file_path):
-            try: os.remove(file_path)
-            except: pass
-        return None
+        logger.warning(f"API download failed: {e}, trying yt-dlp...")
 
+    # Fallback to yt-dlp
+    return await _download_with_ytdlp(link, is_video=True)
 
+# --- YOUTUBEAPI CLASS (Fixed) ---
 class YouTubeAPI:
     def __init__(self):
         self.base = "https://www.youtube.com/watch?v="
@@ -154,8 +192,10 @@ class YouTubeAPI:
                     except: pass
         return None
 
-    # --- UNIVERSAL CACHING (From Second File) ---
+    # --- CACHING (with error handling for invalid playlist) ---
     async def _upload_to_cache(self, vid_id, file_path, title, is_video):
+        if not PLAYLIST_ID:
+            return
         try:
             if not os.path.exists(file_path): return
             
@@ -167,10 +207,14 @@ class YouTubeAPI:
             cap = f"**Song:** {title}\n**ID:** `{vid_id}`\n**Saved by:** {app.me.mention}"
             
             msg = None
-            if is_video:
-                msg = await app.send_video(PLAYLIST_ID, file_path, caption=cap, supports_streaming=True)
-            else:
-                msg = await app.send_audio(PLAYLIST_ID, file_path, caption=cap, title=title)
+            try:
+                if is_video:
+                    msg = await app.send_video(PLAYLIST_ID, file_path, caption=cap, supports_streaming=True)
+                else:
+                    msg = await app.send_audio(PLAYLIST_ID, file_path, caption=cap, title=title)
+            except Exception as e:
+                logger.error(f"Failed to upload to cache channel (check if bot is member): {e}")
+                return
 
             if msg:
                 await trackdb.update_one(
@@ -187,12 +231,14 @@ class YouTubeAPI:
             logger.error(f"Upload Error: {e}")
 
     async def get_cached_file(self, vid_id: str, is_video: bool = False):
+        if not PLAYLIST_ID:
+            return None
+
         db_id = f"{vid_id}_video" if is_video else vid_id
         local_path = self._find_file(vid_id)
         if local_path: return local_path
 
         doc = await trackdb.find_one({"vid_id": db_id})
-        
         if doc and "message_id" in doc:
             message_id = doc['message_id']
             ext = "mp4" if is_video else "mp3"
@@ -222,15 +268,17 @@ class YouTubeAPI:
             except Exception as e:
                 logger.error(f"Cache Retrieval Failed: {e}")
                 if os.path.exists(temp_path): os.remove(temp_path)
-        
+                # If peer invalid, maybe delete DB entry to avoid repeated errors
+                if "Peer id invalid" in str(e) or "ID not found" in str(e):
+                    await trackdb.delete_one({"vid_id": db_id})
         return None
 
-    # --- GET RELATED (From First File for Autoplay Fix) ---
+    # --- GET RELATED ---
     async def get_related(self, videoid: str, limit: int = 5) -> list:
         related_tracks = []
         try:
             async with aiohttp.ClientSession() as session:
-                # 1. Try Shruti API First
+                # 1. Try Shruti API
                 try:
                     async with session.get(
                         SHRUTI_RELATED_URL,
@@ -244,7 +292,7 @@ class YouTubeAPI:
                 except Exception:
                     pass
 
-                # 2. Fallback to Inflex API if Shruti fails
+                # 2. Fallback to Inflex
                 if not related_tracks:
                     try:
                         async with session.get(
@@ -260,10 +308,9 @@ class YouTubeAPI:
                         pass
         except Exception:
             pass
-
         return related_tracks
 
-    # --- MAIN DOWNLOAD FUNCTION COMBINED ---
+    # --- MAIN DOWNLOAD (with fallback) ---
     async def download(
         self,
         link: str,
@@ -274,7 +321,7 @@ class YouTubeAPI:
         songvideo: Union[bool, str] = None,
         format_id: Union[bool, str] = None,
         title: Union[bool, str] = None,
-    ) -> str:
+    ) -> tuple:
         if videoid:
             vid_id = link
             link = self.base + link
@@ -284,28 +331,26 @@ class YouTubeAPI:
 
         is_video_request = bool(video or songvideo)
 
-        # 1. CHECK DB CACHE (Fastest)
+        # 1. Check Cache
         cached_path = await self.get_cached_file(vid_id, is_video=is_video_request)
         if cached_path: 
             return cached_path, True
 
-        # 2. DOWNLOAD USING NEW API (Shruti)
+        # 2. Download (API + yt-dlp fallback)
         if is_video_request:
             downloaded_file = await download_video(link)
         else:
             downloaded_file = await download_song(link)
 
-        # 3. IF DOWNLOAD SUCCESS, CACHE IT & RETURN
         if downloaded_file:
-            # Upload to TG channel in background
+            # Upload to cache in background
             asyncio.create_task(self._upload_to_cache(vid_id, downloaded_file, title or vid_id, is_video_request))
             return downloaded_file, True
-        
+
         logger.error("❌ All Download APIs Failed.")
         return None, False
 
-
-    # --- UTILS (Kept from both files to ensure compatibility) ---
+    # --- ALL OTHER METHODS (unchanged, kept as is) ---
     async def exists(self, link: str, videoid: Union[bool, str] = None):
         if videoid: link = self.base + link
         return bool(re.search(self.regex, link))
@@ -440,4 +485,3 @@ class YouTubeAPI:
             return 0, "Video download failed"
         except Exception as e:
             return 0, f"Video download error: {e}"
-                        
