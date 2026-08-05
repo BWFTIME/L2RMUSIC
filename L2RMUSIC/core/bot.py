@@ -63,19 +63,16 @@ class Ashish(Client):
 
         # 2. Check Logger/Log Channel Access and send startup message
         try:
-            # Ensure this entire block is properly indented (4 spaces)
             await self.send_message(
                 chat_id=config.LOGGER_ID,
                 text=f"<u><b>» {self.mention} ʙᴏᴛ sᴛᴀʀᴛᴇᴅ :</b><u>\n\nɪᴅ : <code>{self.id}</code>\nɴᴀᴍᴇ : {self.name}\nᴜsᴇʀɴᴀᴍᴇ : @{self.username}",
             )
         except (errors.ChannelInvalid, errors.PeerIdInvalid):
-            # Specific error handling for the log channel not being accessible
             LOGGER(__name__).error(
                 "Bot has failed to access the log group/channel. Make sure that you have added your bot to your log group/channel."
             )
             exit(1)
         except Exception as ex:
-            # General error handling for the log message failure
             LOGGER(__name__).error(
                 f"Bot has failed to send startup message to the log group/channel.\n  Reason: {type(ex).__name__} - {ex}."
             )
@@ -95,17 +92,32 @@ class Ashish(Client):
             )
             exit(1)
 
-        # ---------- 🆕 FIX: Pre-resolve Cache Channel ----------
+        # ---------- 🆕 FIX: Pre-resolve Cache Channel (to avoid Peer id invalid) ----------
         try:
-            # Use the same CACHE_CHANNEL_ID as defined in config
-            cache_chat_id = int(config.CACHE_CHANNEL_ID)
+            # Use the same CACHE_CHANNEL_ID as defined in config (or fallback to env)
+            if hasattr(config, 'CACHE_CHANNEL_ID'):
+                cache_chat_id = int(config.CACHE_CHANNEL_ID)
+            else:
+                # If not in config, try to get from environment variable
+                import os
+                cache_chat_id = int(os.environ.get("CACHE_CHANNEL_ID", 0))
+                if cache_chat_id == 0:
+                    raise ValueError("CACHE_CHANNEL_ID not set")
+
+            # Resolve the chat (this will cache the peer in Pyrogram's internal storage)
             await self.get_chat(cache_chat_id)
             LOGGER(__name__).info(f"✅ Cache channel resolved: {cache_chat_id}")
+
         except AttributeError:
             LOGGER(__name__).warning("⚠️ CACHE_CHANNEL_ID not defined in config. Skipping pre-resolution.")
+        except ValueError:
+            LOGGER(__name__).error("❌ CACHE_CHANNEL_ID is invalid or not set. Please set it in config or as env variable.")
+            # Uncomment below to exit if cache channel is critical
+            # exit(1)
         except Exception as e:
             LOGGER(__name__).error(f"❌ Failed to resolve cache channel: {e}")
-            # Optional: exit if cache channel is critical (uncomment if needed)
+            LOGGER(__name__).error("   Make sure the bot is a member of that channel and the ID is correct.")
+            # Uncomment below to exit if cache channel is critical
             # exit(1)
 
         LOGGER(__name__).info(f"Music Bot Started as {self.name}")
