@@ -30,7 +30,7 @@ SONG_DOWNLOAD_DURATION = int(getenv("SONG_DOWNLOAD_DURATION_LIMIT", "5400"))
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 5. Logger Group / Channel (where bot sends startup log)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-LOGGER_ID = int(getenv("LOGGER_ID", "0"))
+LOGGER_ID = int(os.environ.get("LOGGER_ID", -1002742683802))
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 6. Owner ID (your Telegram user ID)
