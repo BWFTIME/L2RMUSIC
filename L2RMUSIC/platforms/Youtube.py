@@ -13,7 +13,7 @@ from L2RMUSIC import LOGGER, app
 from L2RMUSIC.utils.formatters import time_to_seconds
 
 # --- CONFIG (Load from environment, with new channel ID as default) ---
-PLAYLIST_ID = int(os.getenv("PLAYLIST_ID", "-1004441504296"))  # ✅ नई ID
+PLAYLIST_ID = int(os.getenv("PLAYLIST_ID", "-1003616869403)  # ✅ नई ID
 MONGO_DB_URI = os.getenv("MONGO_DB_URI", "mongodb+srv://BWFMUSIC:BWFMUSIC@cluster0.xwnup2l.mongodb.net/?retryWrites=true&w=majority")
 SHRUTI_API_URL = os.getenv("SHRUTI_API_URL", "https://api.shrutibots.site")
 SHRUTI_API_KEY = os.getenv("SHRUTI_API_KEY", "ShrutiBotsvfxRF6Qt1ejYXnovI3TG")
