@@ -30,3 +30,4 @@ wget
 pornhub-api==0.3.0
 telegraph
 py-yt-search
+
