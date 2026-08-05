@@ -12,7 +12,7 @@ API_ID = int(getenv("API_ID", "23392712"))
 API_HASH = getenv("API_HASH", "7cb236b197b25c243fa83e7e0173d0e6")
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 2. Bot Token (from @BotFather)
+# 2. Bot Token (from @BotFather) 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 BOT_TOKEN = getenv("BOT_TOKEN", "")
 
