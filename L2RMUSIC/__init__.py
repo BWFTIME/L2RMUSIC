@@ -1,9 +1,7 @@
-# ✅ Corrected __init__.py
-
+# ✅ SABSE PEHLE LOGGING IMPORT KARO
 from .logging import LOGGER
-from .config import config   # agar config variable hai
 
-# Ab baaki sab import karo
+# AB BAAKI SAB
 from L2RMUSIC.core.bot import Ashish
 from L2RMUSIC.core.dir import dirr
 from L2RMUSIC.core.git import git
