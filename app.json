@@ -1,83 +1,63 @@
 {
-  "name": "ShrutixMusic",
-  "description": "A Telegram Music Player Bot, written in Python with Pyrogram and Py-Tgcalls.",
-  "logo": "https://telegra.ph/file/5a5039d21a5cedb5bd6bc-e25218a8dd3941e289.jpg",
-  "keywords": [
-    "python3",
-    "telegram",
-    "bot",
-    "L2RMUSIC",
-    "MusicBot",
-    "telegram-bot",
-    "pyrogram"
-  ],
-  "env": {
-    "API_ID": {
-      "description": "Get this value from https://my.telegram.org",
-      "value": "",
-      "required": true
+    "name": "➥ 𝐿2𝙍 𝗠𝗨𝗦𝗜𝗖™🇮🇳",
+    "description": "A Telegram Music Player Bot, written in Python with Pyrogram and Py-Tgcalls.",
+    "logo": "https://telegra.ph/file/e576aa8308c49d945f433.jpg",
+    "keywords": [
+        "python3",
+        "telegram",
+        "bot",
+        "L2RMUSIC",
+        "MusicBot",
+        "telegram-bot",
+        "pyrogram"
+    ],
+    "env": {
+        "API_ID": {
+            "🪫description": "Get this value from 🔥",
+            "value": "14050586",
+            "required": true
+        },
+        "API_HASH": {
+            "description": "🦋Get this value from♦️",
+            "value": "42a60d9c657b106370c79bb0a8ac560c",
+            "required": true
+        },
+        "BOT_TOKEN": {
+            "description": "🍃A Bot's token from Botfather",
+            "value": "",
+            "required": true
+        },
+        "MONGO_DB_URI": {
+            "description": "Get a mongodb url...🌤 ",
+            "value": "",
+            "required": true
+        },
+        "OWNER_ID": {
+            "description": "👻The user id of user add as OWNER.",
+            "value": "",
+            "required": true
+        },
+        "STRING_SESSION": {
+            "description": "A Pyrogram v2 String Session from🕊️",
+            "value": "",
+            "required": true
+        },
+        "LOGGER_ID": {
+            "description": "Private Group Bana Kar Uska Id Dalo🌙⃟   ",
+            "value": "",
+            "required": true
+        }
     },
-    "API_HASH": {
-      "description": "Get this value from https://my.telegram.org",
-      "value": "",
-      "required": true
-    },
-    "BOT_TOKEN": {
-      "description": "A Bot's token from Botfather",
-      "value": "",
-      "required": true
-    },
-    "MONGO_DB_URI": {
-      "description": "Get a mongodb url from https://cloud.mongodb.com.",
-      "value": "",
-      "required": true
-    },
-    "OWNER_ID": {
-      "description": "The user id of user whom you would like to add as OWNER.",
-      "value": "",
-      "required": true
-    },
-    "STRING_SESSION": {
-      "description": "A Pyrogram v2 String Session from @StringFatherBot on Telegram.",
-      "value": "",
-      "required": true
-    },
-    "HEROKU_API_KEY": {
-      "description": "Your Heroku account's API key",
-      "value": "",
-      "required": false
-    },
-    "HEROKU_APP_NAME": {
-      "description": "Your heroku app name",
-      "value": "",
-      "required": false
-    },
-    "LOGGER_ID": {
-      "description": "Your Log Group ID, add your bot and promote as an admin with full rights!",
-      "value": "",
-      "required": true
-    },
-    "SHRUTI_API_URL": {
-      "description": "Your Shruti API URL",
-      "value": "https://api.shrutibots.site",
-      "required": true
-    },
-    "SHRUTI_API_KEY": {
-      "description": "Get API key from Telegram bot @SHRUTIAPIBOT",
-      "value": "",
-      "required": true
-    }
-  },
-  "buildpacks": [
-    {
-      "url": "heroku/python"
-    },
-    {
-      "url": "heroku/nodejs"
-    },
-    {
-      "url": "https://github.com/jonathanong/heroku-buildpack-ffmpeg-latest.git"
-    }
-  ],
-  "stack": "container"
+    "buildpacks": [
+        {
+            "url": "heroku/python"
+        },
+        {
+            "url": "heroku/nodejs"
+        },
+        {
+            "url": "https://github.com/jonathanong/heroku-buildpack-ffmpeg-latest.git"
+        }
+    ],
+    "stack": "container"
 }
