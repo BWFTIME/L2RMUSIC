@@ -1,8 +1,5 @@
 # All rights reserved.
 #
-import uvloop
-
-uvloop.install()
 
 import sys
 import os
@@ -41,7 +38,6 @@ class AyuBot(Client):
 
         # ========== Safe Logger ID Processing & Startup Message ==========
         try:
-            # ID ko clean karke integer me convert karna taaki string/int ka panga na ho
             logger_id_raw = getattr(config, "LOGGER_ID", None)
             if logger_id_raw is None:
                 logger_id_raw = os.environ.get("LOGGER_ID")
@@ -54,11 +50,10 @@ class AyuBot(Client):
                 LOGGER_ID = None
 
             if LOGGER_ID:
-                # Pehle group ko warm-up/resolve karne ki koshish taaki peer invalid na aaye
                 try:
                     await self.get_chat(LOGGER_ID)
                 except Exception:
-                    pass # Agar pehle baar me cache na ho toh ignore karke direct message bhejenge
+                    pass
 
                 await self.send_message(
                     LOGGER_ID,
@@ -77,7 +72,6 @@ class AyuBot(Client):
             LOGGER(__name__).error(
                 f"Bot has failed to access the log Group.\n  Reason: {type(ex).__name__} - {ex}"
             )
-            # Bot crash hone se bachane ke liye yahan sys.exit() hata diya hai taaki aage ke commands load ho sakein
 
         # ========== Set Bot Commands ==========
         if getattr(config, "SET_CMDS", "True") == str(True):
@@ -102,7 +96,7 @@ class AyuBot(Client):
                         BotCommand("skip", "ᴍᴏᴠᴇ ᴛᴏ ɴᴇxᴛ ᴛʀᴀᴄᴋ ɪɴ ǫᴜᴇᴜᴇ"),
                         BotCommand("pause", "ᴘᴀᴜsᴇ ᴛʜᴇ ᴄᴜʀʀᴇɴᴛ ᴘʟᴀʏɪɴɢ sᴏɴɢ"),
                         BotCommand("resume", "ʀᴇsᴜᴍᴇ ᴛʜᴇ ᴘᴀᴜsᴇᴅ sᴏɴɢ"),
-                        BotCommand("end", "ᴄʟᴇᴀʀ ᴛʜᴇ ǫᴜᴇᴜᴇ ᴀɴᴅ ʟᴇᴀᴠᴇ ᴠᴏɪᴄᴇᴄʜᴀᴛ"),
+                        BotCommand("end", "ᴄʟᴇᴀʀ ᴛʜᴇ ǫᴜᴇᴜᴇ ᴀᴍᴅ ʟᴇᴀᴠᴇ ᴠᴏɪᴄᴇᴄʜَات"),
                         BotCommand("shuffle", "ʀᴀɴᴅᴏᴍʟʏ sʜᴜғғʟᴇs ᴛʜᴇ ǫᴜᴇᴜᴇᴅ ᴘʟᴀʏʟɪsᴛ."),
                         BotCommand(
                             "playmode",
